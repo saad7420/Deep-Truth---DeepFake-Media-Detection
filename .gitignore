@@ -1,0 +1,41 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Project-specific large files and artifacts
+images_checkpoints/
+videos_checkpoints/
+logs/
+
+# Model weights & data dumps
+*.pth
+*.pt
+*.ckpt
+*.h5
+*.bin
+*.onnx
+
+# Environment & Dependencies
+.env
+.venv
+env/
+venv/
+ENV/
+node_modules/
+
+# Web / Extension build output
+/client/dist/
+/client/build/
+/extension/dist/
+/extension/build/
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,34 @@
+# ── Core inference stack ──────────────────────────────────────────────────────
+# The LoRA adapters under videos_checkpoints/ and images_checkpoints/ were
+# exported by peft 0.19.x. Their adapter_config.json carries fields
+# (arrow_config, alora_invocation_tokens, qalora_group_size, ...) that older
+# peft releases reject, so do NOT pin peft back below 0.19 — the old
+# >=0.10,<0.15 pin cannot load these checkpoints at all.
+torch>=2.1
+torchvision>=0.16
+numpy>=1.26
+transformers>=4.45
+peft>=0.19
+accelerate>=0.26.0
+safetensors>=0.4.2
+opencv-python>=4.8.0
+pillow>=10.0.0
+
+# MTCNN face detection: the video face-crop branch and the
+# image_ffpp_facecrop checkpoint both need it. If it is absent the pipeline
+# degrades gracefully — the face branch is skipped and the image ensemble
+# re-weights itself onto the generalist checkpoints.
+facenet-pytorch>=2.5.3
+
+# ── API ───────────────────────────────────────────────────────────────────────
+fastapi>=0.110.0
+uvicorn[standard]
+python-multipart
+aiosqlite>=0.20.0
+python-dotenv
+
+# ── Audio (M6, still a stub engine) ───────────────────────────────────────────
+# Needed only once deeptruth_pipeline/inferencers/audio.py replaces
+# AudioFakeNetStub; harmless to install ahead of that.
+soundfile>=0.12.1
+scipy>=1.11

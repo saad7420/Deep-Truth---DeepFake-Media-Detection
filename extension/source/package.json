@@ -1,0 +1,21 @@
+{
+  "name": "deep-truth-extension",
+  "version": "1.1.0",
+  "description": "Deep Truth browser extension — verifies in-page media against the Deep Truth analysis server",
+  "scripts": {
+    "build": "node esbuild.config.js",
+    "watch": "node esbuild.config.js --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.260",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.3.0"
+  }
+}
