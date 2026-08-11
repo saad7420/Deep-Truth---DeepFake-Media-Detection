@@ -68,7 +68,7 @@ export default function ReportPage() {
 
   const meta = VERDICT[c.status];
   const tone = riskTone(c.riskScore);
-  const { summary, checkpoints } = readAnalysis(c.analysisResults);
+  const { summary, checkpoints, secondarySignals } = readAnalysis(c.analysisResults);
   const explanation = explainEvidence(summary);
   const rationale = summary?.evidence.rationale;
 
@@ -270,9 +270,53 @@ export default function ReportPage() {
           </Section>
         )}
 
+        {/* ── Supplementary signals ─────────────────────────────────────────
+            Deliberately its own section, not folded into "Checkpoint
+            detail" above. These are additional evidence passes that do not
+            feed the primary verdict (currently: SRM noise analysis) — the
+            report previously had no separate section for these, so a
+            secondary-tier row like SRM sorted straight into the checkpoint
+            list by score and printed above every real adapter vote,
+            reading as if it were one of them. */}
+        {secondarySignals.length > 0 && (
+          <Section title={`${checkpoints.length > 0 ? "5" : "4"} · Supplementary signals`}>
+            <p className="mb-3 text-xs text-slate-500">
+              Additional evidence gathered alongside the primary engine. These do not
+              contribute to the verdict or fused risk score above.
+            </p>
+            <ul className="space-y-2">
+              {secondarySignals.map((s, i) => (
+                <li key={`${s.signal}-${i}`} className="text-xs">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="text-slate-400 print:text-slate-600">{s.label}</span>
+                    {s.hasVerdict && typeof s.score === "number" ? (
+                      <span className="tabular shrink-0 font-semibold text-slate-300">
+                        {s.score.toFixed(1)}%
+                      </span>
+                    ) : (
+                      <span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-slate-600">
+                        Not yet trained
+                      </span>
+                    )}
+                  </div>
+                  {(s.rationale || s.note) && (
+                    <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500 print:text-slate-600">
+                      {s.rationale ?? s.note}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </Section>
+        )}
+
         {/* ── Notes ───────────────────────────────────────────────────────── */}
         {c.notes && (
-          <Section title={`${checkpoints.length > 0 ? "5" : "4"} · Investigator notes`}>
+          <Section
+            title={`${
+              (checkpoints.length > 0 ? 1 : 0) + (secondarySignals.length > 0 ? 1 : 0) + 4
+            } · Investigator notes`}
+          >
             <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-300 print:text-slate-800">
               {c.notes}
             </p>

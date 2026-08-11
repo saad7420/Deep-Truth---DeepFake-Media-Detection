@@ -3,10 +3,25 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-DEEPTRUTH_ROOT = Path(os.environ.get("DEEPTRUTH_ROOT", "/data/deeptruth")).resolve()
+# DEEPTRUTH_ROOT used to default to a hardcoded "/data/deeptruth" — a fixed
+# path that only ever made sense on the one Linux server this was first
+# deployed to. Any entry point that imports this module without going
+# through server/app/_dtp.py's bootstrap() first (which overrides these via
+# os.environ.setdefault before config.py is ever imported) inherited that
+# wrong default — this is what broke diagnose_video.py/diagnose_image.py
+# outright on Windows, and would break `python cli.py` the same way.
+#
+# The fix: default to this file's own location. config.py lives at the
+# project root, so its parent directory *is* DEEPTRUTH_ROOT on any machine,
+# any OS, with no environment setup required — matching exactly what
+# bootstrap() computes, just without needing bootstrap() to have run first.
+# An explicit DEEPTRUTH_ROOT env var still overrides this, same as before.
+_THIS_FILE_ROOT = Path(__file__).resolve().parent
+
+DEEPTRUTH_ROOT = Path(os.environ.get("DEEPTRUTH_ROOT", str(_THIS_FILE_ROOT))).resolve()
 
 CHECKPOINT_DIR = Path(os.environ.get(
-    "DEEPTRUTH_CHECKPOINTS", DEEPTRUTH_ROOT / "checkpoints")).resolve()
+    "DEEPTRUTH_CHECKPOINTS", DEEPTRUTH_ROOT / "videos_checkpoints")).resolve()
 
 CACHE_DIR = Path(os.environ.get(
     "DEEPTRUTH_CACHE", DEEPTRUTH_ROOT / "preprocessed")).resolve()
@@ -15,7 +30,8 @@ LOG_DIR = Path(os.environ.get(
     "DEEPTRUTH_LOGS", DEEPTRUTH_ROOT / "logs")).resolve()
 
 TRAIN_PIPELINE = Path(os.environ.get(
-    "DEEPTRUTH_TRAIN_PIPELINE", Path.home() / "deeptruth_train.py")).resolve()
+    "DEEPTRUTH_TRAIN_PIPELINE",
+    str(DEEPTRUTH_ROOT / "train_pipeline" / "deeptruth_train.py"))).resolve()
 
 VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
 AUDIO_EXTS = {".wav", ".mp3", ".flac", ".m4a", ".ogg", ".opus", ".aac"}
@@ -51,7 +67,15 @@ def _resolve_image_checkpoint_dir() -> Path:
     img_root = os.environ.get("DEEPTRUTH_IMG_ROOT")
     if img_root:
         return (Path(img_root) / "checkpoints").resolve()
-    return CHECKPOINT_DIR
+    # Previously fell back to CHECKPOINT_DIR — the VIDEO checkpoint dir.
+    # With no env vars set, that made image checkpoint discovery silently
+    # search the video folder for image_*_lora_best directories, producing
+    # a "no image checkpoints found in .../videos_checkpoints" error that
+    # looks like a missing-files problem when it is actually two different
+    # modalities being pointed at the same folder. Falls back to its own
+    # sibling folder instead, matching server/app/_dtp.py's bootstrap()
+    # convention (PROJECT_ROOT / "images_checkpoints").
+    return DEEPTRUTH_ROOT / "images_checkpoints"
 
 IMAGE_CHECKPOINT_DIR = _resolve_image_checkpoint_dir()
 
@@ -203,3 +227,45 @@ def _resolve_audio_threshold() -> float:
 
 
 AUDIO_THRESHOLD = _resolve_audio_threshold()
+
+
+# ─── SRM noise-analysis model ───────────────────────────────────────────────
+#
+# 5-filter high-pass bank -> 15-dim statistics -> small MLP head, trained on
+# CASIA v2 (splicing/copy-move). See preprocessors/srm_filters.py for the
+# filter bank and inferencers/srm.py for the checkpoint contract those
+# HEAD_DIMS constants must match.
+
+SRM_CHECKPOINT = os.environ.get("DEEPTRUTH_SRM_CHECKPOINT", "").strip() or None
+SRM_THRESHOLD_ENV = os.environ.get("DEEPTRUTH_SRM_THRESHOLD", "").strip() or None
+
+
+def _resolve_srm_threshold() -> float:
+    """Same precedence as audio: explicit env var > checkpoint's own measured
+    value > 0.5. SRM's classifier is small and trained on a much smaller,
+    more balanced dataset than the audio model, so unlike audio there is no
+    a-priori reason to expect the threshold to sit far from 0.5 — but reading
+    it from metadata.json rather than assuming keeps that an empirical
+    question instead of an assumption."""
+    if SRM_THRESHOLD_ENV:
+        try:
+            return float(SRM_THRESHOLD_ENV)
+        except ValueError:
+            pass
+
+    if SRM_CHECKPOINT:
+        ckpt = Path(SRM_CHECKPOINT)
+        meta = (ckpt / "metadata.json") if ckpt.is_dir() else ckpt.parent / "metadata.json"
+        if meta.exists():
+            try:
+                import json
+                value = json.loads(meta.read_text()).get("recommended_threshold")
+                if isinstance(value, (int, float)):
+                    return float(value)
+            except Exception:
+                pass
+
+    return DEFAULT_THRESHOLD
+
+
+SRM_THRESHOLD = _resolve_srm_threshold()

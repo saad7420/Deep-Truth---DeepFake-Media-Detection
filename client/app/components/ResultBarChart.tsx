@@ -20,6 +20,7 @@ import {
   readAnalysis,
   verdictFromRisk,
   type CheckpointRow,
+  type SecondarySignal,
 } from "@/app/lib/analysis";
 import { VERDICT, type AnalysisResult } from "@/app/shared/schema";
 
@@ -114,7 +115,8 @@ export function ResultBarChart({
 }: ResultBarChartProps) {
   const [showDetail, setShowDetail] = useState(false);
 
-  const { summary, checkpoints, generalists, faceCheckpoints } = readAnalysis(analysisResults);
+  const { summary, checkpoints, generalists, faceCheckpoints, secondarySignals } =
+    readAnalysis(analysisResults);
   const clamped = Math.max(0, Math.min(100, riskScore));
 
   /* A neutral summary means the engine declined to contribute. Reporting a
@@ -285,6 +287,49 @@ export function ResultBarChart({
               </div>
             ))}
         </div>
+      )}
+
+      {/* ── Secondary signals (SRM, etc.) ────────────────────────────────────
+          Deliberately styled apart from everything above: no risk bar, no
+          colour tied to the primary verdict palette, and its own heading —
+          nothing here should read as "another vote" the way a checkpoint
+          does. This is supplementary evidence the primary engine's fused
+          score never saw. */}
+      {secondarySignals.length > 0 && (
+        <div className="space-y-2 border-t border-slate-800 pt-4">
+          <p className="font-mono text-[10px] uppercase tracking-widest text-slate-600">
+            Supplementary signals
+          </p>
+          {secondarySignals.map((s, i) => (
+            <SecondarySignalCard key={`${s.signal}-${i}`} signal={s} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Secondary signal card ──────────────────────────────────────────────── */
+
+function SecondarySignalCard({ signal }: { signal: SecondarySignal }) {
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-900/40 px-3.5 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-medium text-slate-300">{signal.label}</p>
+        {signal.hasVerdict && typeof signal.score === "number" ? (
+          <span className="font-mono text-xs font-semibold text-slate-300">
+            {signal.score.toFixed(1)}%
+          </span>
+        ) : (
+          <span className="rounded-full border border-slate-700 bg-slate-800/60 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-slate-500">
+            Not yet trained
+          </span>
+        )}
+      </div>
+      {(signal.rationale || signal.note) && (
+        <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
+          {signal.rationale ?? signal.note}
+        </p>
       )}
     </div>
   );

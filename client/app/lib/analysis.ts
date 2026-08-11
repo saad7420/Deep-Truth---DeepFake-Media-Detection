@@ -175,8 +175,34 @@ export interface AnalysisView {
   /** Checkpoints split by role — only populated on the image branch. */
   generalists: CheckpointRow[];
   faceCheckpoints: CheckpointRow[];
+  /** Supplementary, non-verdict signals — e.g. SRM noise analysis. Never
+      contributes to `summary` and never appears in `checkpoints`; these are
+      additional evidence a reader can choose to look at, not votes. */
+  secondarySignals: SecondarySignal[];
   /** True when there is nothing to show yet. */
   isEmpty: boolean;
+}
+
+/**
+ * A supplementary analysis pass that runs alongside the primary modality
+ * engine but does not feed its verdict — currently only SRM noise analysis.
+ * `details.tier === "secondary"` on the server is what puts a row here
+ * instead of in `checkpoints`; see analyser.py's `_srm_row()`.
+ */
+export interface SecondarySignal {
+  /** Which supplementary analysis this is, e.g. "srm_noise". */
+  signal: string;
+  label: string;
+  /** True once this signal has a trained model producing real scores.
+      False means the underlying feature extraction ran (real, useful data)
+      but there is no classifier yet — the note explains what to expect. */
+  hasVerdict: boolean;
+  /** 0-100. Only meaningful when hasVerdict is true. */
+  score?: number;
+  rationale?: string;
+  note?: string;
+  /** Raw evidence for anything not covered by the fields above. */
+  evidence: Record<string, unknown>;
 }
 
 /* ── Classification ──────────────────────────────────────────────────────── */
@@ -188,6 +214,24 @@ function isSummary(row: Row): boolean {
   if (typeof tier === "string") return tier === "summary";
   // Legacy rows (written before `tier` existed) — fall back to the name.
   return row.model_name in SUMMARY_ROWS || /\(fused\)|\(stub\)$/.test(row.model_name);
+}
+
+function isSecondary(row: Row): boolean {
+  return row.details?.tier === "secondary";
+}
+
+function toSecondary(row: Row): SecondarySignal {
+  const evidence = (row.details ?? {}) as Record<string, unknown>;
+  const confidence = typeof evidence.confidence === "number" ? evidence.confidence : 0;
+  return {
+    signal: typeof evidence.signal === "string" ? evidence.signal : "unknown",
+    label: row.model_name,
+    hasVerdict: confidence > 0,
+    score: confidence > 0 ? row.confidence : undefined,
+    rationale: typeof evidence.rationale === "string" ? evidence.rationale : undefined,
+    note: typeof evidence.note === "string" ? evidence.note : undefined,
+    evidence,
+  };
 }
 
 function toCheckpoint(row: Row): CheckpointRow {
@@ -228,7 +272,15 @@ function toSummary(row: Row): SummaryRow {
 export function readAnalysis(rows: readonly Row[] | undefined | null): AnalysisView {
   const all = rows ?? [];
   const summaryRow = all.find(isSummary);
-  const checkpoints = all.filter((r) => !isSummary(r)).map(toCheckpoint);
+  const secondaryRows = all.filter(isSecondary);
+  // Excludes secondary rows too — without this, SRM's supplementary row
+  // (tier: "secondary") fell through into "everything that isn't summary"
+  // and rendered as if it were one more adapter vote in the ensemble
+  // breakdown, alongside actual video/image checkpoint scores it has
+  // nothing to do with.
+  const checkpoints = all
+    .filter((r) => !isSummary(r) && !isSecondary(r))
+    .map(toCheckpoint);
 
   // Loudest signal first — an operator scanning the breakdown wants the
   // adapter that flagged hardest at the top, not alphabetical order.
@@ -239,6 +291,7 @@ export function readAnalysis(rows: readonly Row[] | undefined | null): AnalysisV
     checkpoints,
     generalists: checkpoints.filter((c) => c.role === "generalist"),
     faceCheckpoints: checkpoints.filter((c) => c.role === "face"),
+    secondarySignals: secondaryRows.map(toSecondary),
     isEmpty: all.length === 0,
   };
 }

@@ -12,19 +12,64 @@ inject custom configurations.
 from __future__ import annotations
 
 import logging
+import os
 
 from .preprocessors.base import Preprocessor
 from .preprocessors.video import VideoPreprocessor
 from .preprocessors.image import ImagePreprocessor
+from .preprocessors.srm import SRMPreprocessor
 from .preprocessors.stubs import AudioPreprocessor
 from .inferencers.base import Inferencer
 from .inferencers.video import VideoInferencer
 from .inferencers.image import ImageInferencer
+from .inferencers.srm import SRMInferencer
 from .inferencers.stubs import AudioInferencer
 from .storage import CacheStore
-from .config import AUDIO_CHECKPOINT, AUDIO_THRESHOLD
+from .config import (AUDIO_CHECKPOINT, AUDIO_THRESHOLD,
+                     SRM_CHECKPOINT, SRM_THRESHOLD)
 
 log = logging.getLogger(__name__)
+
+
+class _NeutralSRMInferencer(Inferencer):
+    """Used when no SRM checkpoint is configured. Distinct from SRMInferencer
+    itself (which also soft-fails to neutral without a checkpoint) so that a
+    completely disabled SRM channel never even attempts feature extraction —
+    useful for a deployment that wants zero SRM overhead rather than "compute
+    features, then discard them" on every single video/image case."""
+    modality = "srm"
+
+    def supports(self, media_kind: str) -> bool:
+        return media_kind in ("video", "image")
+
+    def predict(self, media_key, preprocessed, **opts):
+        from .inferencers.base import InferenceResult
+        return InferenceResult(
+            media_key=media_key, modality="srm", trust_score=float("nan"),
+            verdict="UNKNOWN", confidence=0.0,
+            rationale="SRM Noise Analysis (M8) not yet trained — no checkpoint configured")
+
+
+def _default_srm_inferencer() -> Inferencer:
+    """SRMInferencer always runs real feature extraction (cheap: pure numpy
+    convolution over a handful of small frames, no GPU, no torch import
+    needed for that half). It only needs a checkpoint for the classifier
+    step, and soft-fails to a neutral result with the features attached as
+    evidence when one isn't configured yet — so unlike audio, there is no
+    reason to swap the whole inferencer out; the same object handles both
+    states.
+
+    DEEPTRUTH_SRM_DISABLE skips this entirely for a deployment that wants
+    zero SRM overhead (e.g. very high case volume, resource-constrained).
+    """
+    if os.environ.get("DEEPTRUTH_SRM_DISABLE", "").lower() in ("1", "true", "yes"):
+        return _NeutralSRMInferencer()
+
+    log.info(
+        "srm: feature extraction active" +
+        (f" — checkpoint {SRM_CHECKPOINT}" if SRM_CHECKPOINT
+         else " (no checkpoint: features only, no verdict)"))
+    return SRMInferencer(checkpoint_path=SRM_CHECKPOINT, threshold=SRM_THRESHOLD)
 
 
 def _default_audio_inferencer() -> Inferencer:
@@ -55,17 +100,20 @@ class Registry:
                  video_inferencer: Inferencer | None = None,
                  image_inferencer: Inferencer | None = None,
                  audio_inferencer: Inferencer | None = None,
+                 srm_inferencer: Inferencer | None = None,
                  image_preprocessor: Preprocessor | None = None):
         self.store = store or CacheStore()
         self._preprocessors: dict[str, Preprocessor] = {
             "video": VideoPreprocessor(store=self.store),
             "audio": AudioPreprocessor(store=self.store),
             "image": image_preprocessor or ImagePreprocessor(store=self.store),
+            "srm":   SRMPreprocessor(store=self.store),
         }
         self._inferencers: dict[str, Inferencer] = {
             "video": video_inferencer or VideoInferencer(),
             "audio": audio_inferencer or _default_audio_inferencer(),
             "image": image_inferencer or ImageInferencer(),
+            "srm":   srm_inferencer or _default_srm_inferencer(),
         }
 
     def preprocessor_for(self, media_kind: str) -> Preprocessor | None:

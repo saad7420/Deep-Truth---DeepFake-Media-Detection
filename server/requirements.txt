@@ -4,8 +4,15 @@
 # (arrow_config, alora_invocation_tokens, qalora_group_size, ...) that older
 # peft releases reject, so do NOT pin peft back below 0.19 — the old
 # >=0.10,<0.15 pin cannot load these checkpoints at all.
-torch>=2.1
-torchvision>=0.16
+# torch>=2.1 alone is not a safe floor: 2.1.2 lacks torch.float8_e4m3fnuz,
+# which transformers>=4.49 references unconditionally in its internals,
+# producing "module 'torch' has no attribute 'float8_e4m3fnuz'" on every
+# single model load regardless of which checkpoint. Observed reproducibly
+# with torch 2.1.2 + transformers 4.49.0; multiple independent reports
+# confirm the attribute exists from torch 2.3 onward. >=2.3 is the real
+# floor for this transformers version, not >=2.1.
+torch>=2.3
+torchvision>=0.18
 numpy>=1.26
 transformers>=4.45
 peft>=0.19

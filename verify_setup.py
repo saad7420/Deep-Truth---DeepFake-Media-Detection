@@ -216,9 +216,56 @@ for mod, note in [
                     "by 0.19.x and older releases reject their config outright",
                 )
                 continue
+            if major_minor >= (0, 20):
+                # Reproduced directly: peft 0.20.0 raises
+                # "VivitForVideoClassification.forward() got an unexpected
+                # keyword argument 'input_ids'" on every checkpoint, every
+                # time. TaskType.FEATURE_EXTRACTION has no vision-specific
+                # wrapper class in peft, so get_peft_model() falls back to
+                # the generic base PeftModel, whose forward() is hardcoded
+                # for text models and unconditionally injects input_ids
+                # into the call — ViViT/ViT reject that outright. The
+                # inferencers now bypass this via get_base_model(), but
+                # that fix was only confirmed against 0.19.0; flag 0.20+
+                # until it's specifically re-tested.
+                warn(
+                    f"peft {ver} — 0.20.0 reproducibly hit the "
+                    f"TaskType.FEATURE_EXTRACTION input_ids bug on this "
+                    f"project's checkpoints (see inferencers/video.py, "
+                    f"inferencers/image.py). The get_base_model() workaround "
+                    f"there should handle it, but this combination is "
+                    f"untested — 0.19.x is the confirmed-working version if "
+                    f"checkpoints still fail with an input_ids error."
+                )
         ok(f"{mod} {ver} ({note})")
     except ImportError:
         bad(f"{mod} not installed ({note})", "pip install -r server/requirements.txt")
+
+# torch<2.3 lacks torch.float8_e4m3fnuz, which transformers>=4.49 references
+# unconditionally somewhere in its internals — reproduced directly with
+# torch 2.1.2 + transformers 4.49.0: "module 'torch' has no attribute
+# 'float8_e4m3fnuz'" on every single checkpoint load, regardless of which
+# one. server/requirements.txt's old torch>=2.1 floor was too low for
+# transformers>=4.45's actual requirements; checked here explicitly rather
+# than only in requirements.txt, since an already-installed environment
+# won't re-read that file.
+try:
+    import torch
+    import transformers
+
+    torch_ver = tuple(int(x) for x in torch.__version__.split("+")[0].split(".")[:2])
+    transformers_ver = tuple(int(x) for x in transformers.__version__.split(".")[:2])
+
+    if torch_ver < (2, 3) and transformers_ver >= (4, 49):
+        bad(
+            f"torch {torch.__version__} is too old for transformers "
+            f"{transformers.__version__}",
+            "pip install 'torch>=2.3' 'torchvision>=0.18' — torch<2.3 lacks "
+            "torch.float8_e4m3fnuz, which this transformers version reads "
+            "unconditionally on model load",
+        )
+except ImportError:
+    pass  # already reported as missing above
 
 try:
     import facenet_pytorch  # noqa: F401

@@ -1,0 +1,29 @@
+{
+  "media_key": "mk_86fb6d33ec357f6fa8d2f22fa5187d87",
+  "source_path": "C:\\Users\\Engineer\\Desktop\\deeptruth_pipeline\\server\\uploads\\f22c4844a5a544c7981385a5a5ea06a5.jpeg",
+  "media_kind": "image",
+  "duration_seconds": null,
+  "completed": {
+    "image": true
+  },
+  "extra": {
+    "image": {
+      "size": [
+        224,
+        224
+      ],
+      "orig_size": [
+        1200,
+        1600
+      ],
+      "face_detected": true,
+      "face_box": [
+        429.498046875,
+        255.2858123779297,
+        786.1293334960938,
+        760.9647827148438
+      ],
+      "face_margin": 0.3
+    }
+  }
+}

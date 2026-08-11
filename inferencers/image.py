@@ -343,12 +343,17 @@ class ImageInferencer(Inferencer):
 
     def _forward(self, model, pixel_values) -> float:
         import torch
+        # Same PEFT TaskType.FEATURE_EXTRACTION forward-signature bug as
+        # inferencers/video.py — see that file's _predict_one for the full
+        # explanation. get_base_model() bypasses PeftModel's broken generic
+        # forward() while still running with LoRA weights active.
+        call_target = model.get_base_model() if hasattr(model, "get_base_model") else model
         with torch.no_grad():
             if self._device.type == "cuda" and USE_FP16:
                 with torch.cuda.amp.autocast(dtype=torch.float16):
-                    out = model(pixel_values=pixel_values)
+                    out = call_target(pixel_values=pixel_values)
             else:
-                out = model(pixel_values=pixel_values)
+                out = call_target(pixel_values=pixel_values)
             logits = out.logits.float()
             probs = torch.softmax(logits, dim=-1).cpu().numpy()[0]
         # Class 1 = fake. Matches the training-time label convention used

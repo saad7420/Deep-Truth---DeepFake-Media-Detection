@@ -142,6 +142,38 @@ def _engine_result_row(case_id: str, label: str, result: EngineResult) -> dict:
     }
 
 
+def _srm_row(case_id: str, result: EngineResult) -> dict:
+    """Supplementary-tier row for the SRM noise-analysis pass.
+
+    Deliberately NOT `tier: "summary"` — that tier is what the client reads
+    as a case's verdict (`readAnalysis()` takes the first `summary` row it
+    finds), and SRM must never be mistaken for that, whether it is a stub
+    note, an untrained-but-feature-computed result, or eventually a real
+    trained score. `tier: "secondary"` is a distinct, additive signal the
+    console can choose to surface without it ever competing with the
+    primary modality's fused risk score.
+    """
+    details = {
+        "tier":       "secondary",
+        "signal":     "srm_noise",
+        "modality":   result.modality,
+        "confidence": result.confidence,
+        "model_version": result.model_version,
+        **{k: v for k, v in result.evidence.items() if k != "per_checkpoint"},
+    }
+    if result.confidence > 0:
+        details["fake_prob"] = round(result.fake_prob, 4)
+
+    return {
+        "id":         str(uuid.uuid4()),
+        "case_id":    case_id,
+        "model_name": "SRM Noise Analysis (secondary)",
+        "confidence": round(result.fake_prob * 100, 2) if result.confidence > 0 else 0.0,
+        "label":      "INFO",  # never SYNTHETIC/AUTHENTIC — not a verdict
+        "details":    json.dumps(details),
+    }
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # MAIN ENTRY POINT
 # ─────────────────────────────────────────────────────────────────────────────
@@ -211,6 +243,28 @@ async def _analyse_with_engine(case_db_id: str, file_path: str,
     print(f"[Analyser] {modality} done — risk={risk:.1f}%  status={status}  "
           f"confidence={result.confidence:.2f}  "
           f"checkpoints={len(result.evidence.get('per_checkpoint') or {})}")
+
+    # ── SRM supplementary pass ──────────────────────────────────────────────
+    # Runs after the primary verdict is already computed above and can never
+    # change it — `risk` and `status` were captured from `result` before this
+    # block runs. A failure here is caught and logged, never re-raised: SRM
+    # not being trained yet (the normal case today) must not make an
+    # otherwise-successful video/image case fail.
+    media_kind = "video" if modality == "visual" else modality
+    try:
+        srm_engine = get_registry().get("srm")
+        if srm_engine is not None:
+            srm_result: EngineResult = await asyncio.get_event_loop().run_in_executor(
+                None,
+                srm_engine.analyze,
+                EngineInput(media_key=case_db_id, modality="srm",
+                            artifact_path=file_path, task_id=case_db_id,
+                            extra={"media_kind": media_kind}),
+            )
+            rows.append(_srm_row(case_db_id, srm_result))
+    except Exception as exc:  # noqa: BLE001
+        print(f"[Analyser] srm supplementary pass failed (non-fatal): {exc}")
+
     return (risk, risk, status, rows)
 
 

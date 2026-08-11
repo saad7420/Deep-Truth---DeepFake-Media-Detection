@@ -189,14 +189,37 @@ class VideoInferencer(Inferencer):
         import torch
         inputs = self._processor(list(frames), return_tensors="pt")
         pixel_values = inputs["pixel_values"].to(self._device)
+
+        # PEFT's TaskType.FEATURE_EXTRACTION has no vision-specific wrapper
+        # class (unlike TaskType.SEQ_CLS, CAUSAL_LM, etc.), so get_peft_model()
+        # falls back to the generic base PeftModel. That class's forward() has
+        # a signature hardcoded for text models — it unconditionally calls
+        # self.base_model(input_ids=input_ids, ...) regardless of what kwargs
+        # were actually passed to it (see huggingface/peft#796, #2291 for the
+        # identical failure on other vision/multimodal models). ViViT's
+        # forward() has no input_ids parameter at all, so that call raises
+        # "got an unexpected keyword argument 'input_ids'" on every single
+        # checkpoint, every time — this is not intermittent or file-specific.
+        #
+        # This has been observed with peft 0.20.0; server/requirements.txt
+        # pins only peft>=0.19 with no upper bound, so it was never validated
+        # against 0.20.x specifically. The fix below works regardless of
+        # which peft version is installed: call the model PEFT actually
+        # wraps around, not the PeftModel shell. LoRA is applied by swapping
+        # individual nn.Linear layers in place, not by intercepting at
+        # PeftModel.forward(), so get_base_model() still runs with the LoRA
+        # weights active — this bypasses only the broken signature, not the
+        # adapter itself.
+        call_target = model.get_base_model() if hasattr(model, "get_base_model") else model
+
         with torch.no_grad():
             if self._device.type == "cuda" and USE_FP16:
                 with torch.cuda.amp.autocast(dtype=torch.float16):
-                    out = model(pixel_values=pixel_values,
-                                interpolate_pos_encoding=True)
+                    out = call_target(pixel_values=pixel_values,
+                                      interpolate_pos_encoding=True)
             else:
-                out = model(pixel_values=pixel_values,
-                            interpolate_pos_encoding=True)
+                out = call_target(pixel_values=pixel_values,
+                                  interpolate_pos_encoding=True)
             logits = out.logits.float()
             probs = torch.softmax(logits, dim=-1).cpu().numpy()[0]
         return float(probs[1])
