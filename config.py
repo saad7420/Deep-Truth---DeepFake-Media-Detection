@@ -150,3 +150,56 @@ IMAGE_FACE_NAMES       = {n for n, m in IMAGE_CHECKPOINT_INFO.items()
 # lower, so they should not dominate the verdict.
 IMAGE_NO_FACE_FACE_WEIGHT = float(os.environ.get(
     "DEEPTRUTH_IMAGE_NO_FACE_FACE_WEIGHT", "0.2"))
+
+
+# ─── Audio model ──────────────────────────────────────────────────────────────
+#
+# WavLM-Large + 3-layer head, fine-tuned on ASVspoof 2019 LA.
+# inferencers/audio.py rebuilds this architecture and loads with strict=True,
+# so MODEL_ID / UNFREEZE_LAYERS / HEAD_DIMS there must match whatever produced
+# the checkpoint. Those constants live in that module; only deployment-time
+# settings live here.
+
+# Directory containing model.pt (+ optional metadata.json), or a .pt file.
+# Unset means the audio channel stays on the stub and reports "no signal"
+# rather than guessing.
+AUDIO_CHECKPOINT = os.environ.get("DEEPTRUTH_AUDIO_CHECKPOINT", "").strip() or None
+
+# Decision threshold for P(fake). Heavily class-weighted training (ASVspoof LA
+# is ~1:9 bonafide:spoof) pushes the operating point well away from 0.5 — the
+# training script writes the measured EER threshold into metadata.json, and
+# _resolve_audio_threshold() below picks it up automatically so the value does
+# not have to be copied by hand into the environment.
+AUDIO_THRESHOLD_ENV = os.environ.get("DEEPTRUTH_AUDIO_THRESHOLD", "").strip() or None
+
+
+def _resolve_audio_threshold() -> float:
+    """Explicit env var > metadata.json's measured EER point > 0.5.
+
+    Reading metadata.json matters: a checkpoint trained with class weighting
+    can have its equal-error point at 0.0003 rather than 0.5, and running it
+    at 0.5 silently under-flags fake audio. Shipping the threshold alongside
+    the weights keeps the two from drifting apart.
+    """
+    if AUDIO_THRESHOLD_ENV:
+        try:
+            return float(AUDIO_THRESHOLD_ENV)
+        except ValueError:
+            pass
+
+    if AUDIO_CHECKPOINT:
+        ckpt = Path(AUDIO_CHECKPOINT)
+        meta = (ckpt / "metadata.json") if ckpt.is_dir() else ckpt.parent / "metadata.json"
+        if meta.exists():
+            try:
+                import json
+                value = json.loads(meta.read_text()).get("recommended_threshold")
+                if isinstance(value, (int, float)):
+                    return float(value)
+            except Exception:
+                pass
+
+    return DEFAULT_THRESHOLD
+
+
+AUDIO_THRESHOLD = _resolve_audio_threshold()

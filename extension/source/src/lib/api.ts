@@ -242,19 +242,48 @@ export async function getCase(apiUrl: string, caseId: string): Promise<CaseRespo
  * row carries `details.tier === "summary"`, with a name fallback for rows
  * written before that field existed.
  */
-export function explain(c: CaseResponse): string | undefined {
-  const summary = c.analysisResults.find((r) => {
+function summaryRow(c: CaseResponse) {
+  return c.analysisResults.find((r) => {
     const tier = (r.details as { tier?: unknown } | null | undefined)?.tier;
     if (typeof tier === 'string') return tier === 'summary';
     return /\(fused\)|\(stub\)$/.test(r.model_name);
   });
+}
+
+export function explain(c: CaseResponse): string | undefined {
+  const summary = summaryRow(c);
   if (!summary?.details) return undefined;
 
   const d = summary.details as { rationale?: unknown; note?: unknown; error?: unknown };
   for (const v of [d.rationale, d.note, d.error]) {
-    if (typeof v === 'string' && v.trim()) return v.trim();
+    if (typeof v === 'string' && v.trim()) {
+      // The audio engine prefixes its rationale with a long EXPERIMENTAL
+      // notice. That belongs in the UI as a flag, not as the body text of a
+      // badge tooltip — `isExperimental` carries it instead, so strip the
+      // prefix here rather than truncating mid-sentence later.
+      const text = v.trim();
+      const marker = text.indexOf(' | ');
+      if (text.startsWith('EXPERIMENTAL CHECKPOINT:') && marker > 0) {
+        return text.slice(marker + 3);
+      }
+      return text;
+    }
   }
   return undefined;
+}
+
+/**
+ * True when the engine behind this verdict is not yet validated for
+ * production use. Currently only the audio engine sets it, while
+ * DEEPTRUTH_AUDIO_EXPERIMENTAL is on server-side.
+ *
+ * Surfaced separately from the explanation so the badge can mark the result
+ * visually — a reader who only glances at the colour and percentage still
+ * needs to know the number is provisional.
+ */
+export function isExperimental(c: CaseResponse): boolean {
+  const details = summaryRow(c)?.details as { experimental?: unknown } | undefined;
+  return details?.experimental === true;
 }
 
 /** True once the pipeline has finished, whatever the outcome. */

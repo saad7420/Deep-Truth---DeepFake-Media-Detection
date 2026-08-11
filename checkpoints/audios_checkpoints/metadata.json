@@ -1,0 +1,39 @@
+{
+  "model_id": "microsoft/wavlm-large",
+  "architecture": "WavLMClassifier",
+  "unfreeze_layers": 6,
+  "head_dims": [
+    1024,
+    256,
+    64,
+    2
+  ],
+  "sample_rate": 16000,
+  "max_audio_sec": 4,
+  "label_map": {
+    "bonafide": 0,
+    "spoof": 1
+  },
+  "trained_on": "ASVspoof2019 LA train",
+  "epochs_requested": 1,
+  "stopped_early": false,
+  "train_clips": 25380,
+  "train_bonafide": 2580,
+  "train_spoof": 22800,
+  "imbalance_strategy": "class_weighted_loss",
+  "batch_size": 8,
+  "grad_accum": 2,
+  "effective_batch": 16,
+  "lr_backbone": 1e-05,
+  "lr_head": 0.0005,
+  "train_minutes": 23.2,
+  "dev_metrics": {
+    "eer": 2.8301674234320693,
+    "eer_threshold": 0.0002785743272397667,
+    "accuracy": 76.39671550474964,
+    "accuracy_bonafide": 99.80376766091051,
+    "accuracy_spoof": 73.72174381054897,
+    "n": 24844
+  },
+  "recommended_threshold": 0.0002785743272397667
+}

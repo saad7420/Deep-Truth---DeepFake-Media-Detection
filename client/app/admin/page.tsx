@@ -41,7 +41,17 @@ import { readAnalysis } from "@/app/lib/analysis";
 /* What app/registry.py actually registers. Each case is routed to exactly one
    engine by its media type — there is no cross-modal fusion step in this
    backend, so this panel reports engine health rather than blend weights. */
-const ENGINES = [
+interface EngineRow {
+  key: "video" | "image" | "audio";
+  module: string;
+  label: string;
+  detail: string;
+  /** true/false when fixed at build time; null when resolved at runtime
+      from whether the server actually produced readings. */
+  real: boolean | null;
+}
+
+const ENGINES: EngineRow[] = [
   {
     key: "video" as const,
     module: "M7",
@@ -60,8 +70,11 @@ const ENGINES = [
     key: "audio" as const,
     module: "M6",
     label: "Audio forensics",
-    detail: "WavLM-Large — checkpoint not yet wired in",
-    real: false,
+    detail: "WavLM-Large + 3-layer head (ASVspoof 2019 LA)",
+    // Audio is the one engine whose live/stub state is decided at runtime by
+    // DEEPTRUTH_AUDIO_CHECKPOINT rather than fixed at build time, so it is
+    // resolved from the case data below instead of hard-coded here.
+    real: null,
   },
 ];
 
@@ -159,6 +172,12 @@ export default function AdminPage() {
           <div className="space-y-5 p-5">
             {ENGINES.map((e) => {
               const activity = engineActivity.get(e.key);
+              // For audio, "live" is whatever the server actually did: if any
+              // settled case produced a usable reading, a checkpoint is loaded.
+              const isReal =
+                e.real === null
+                  ? activity != null && activity.contributing > 0
+                  : e.real;
               const rate =
                 activity && activity.runs > 0
                   ? Math.round((activity.contributing / activity.runs) * 100)
@@ -174,12 +193,12 @@ export default function AdminPage() {
                     <span
                       className={cn(
                         "shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider",
-                        e.real
+                        isReal
                           ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-400"
                           : "border-amber-500/25 bg-amber-500/10 text-amber-400",
                       )}
                     >
-                      {e.real ? "Live" : "Stub"}
+                      {isReal ? "Live" : "Stub"}
                     </span>
                   </div>
 
@@ -189,18 +208,20 @@ export default function AdminPage() {
                     <div
                       className={cn(
                         "h-full rounded-full transition-all duration-700",
-                        e.real
+                        isReal
                           ? "bg-gradient-to-r from-indigo-600 to-indigo-400"
                           : "bg-slate-600",
                       )}
-                      style={{ width: `${rate ?? (e.real ? 100 : 0)}%` }}
+                      style={{ width: `${rate ?? (isReal ? 100 : 0)}%` }}
                     />
                   </div>
 
                   <p className="text-[11px] text-slate-600">
                     {activity == null
-                      ? "No settled cases for this modality yet."
-                      : e.real
+                      ? e.real === null
+                        ? "No settled audio cases yet — set DEEPTRUTH_AUDIO_CHECKPOINT to enable this channel."
+                        : "No settled cases for this modality yet."
+                      : isReal
                         ? `Returned a usable reading on ${activity.contributing} of the last ${activity.runs} ${e.key} case${activity.runs === 1 ? "" : "s"}.`
                         : `Handed ${activity.runs} case${activity.runs === 1 ? "" : "s"}, all reported inconclusive — the stub contributes no signal by design.`}
                   </p>

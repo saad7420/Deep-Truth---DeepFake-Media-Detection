@@ -233,6 +233,14 @@ const Popup: React.FC = () => {
                 <li key={r.caseId} className="dt-item">
                   <div className="dt-item-top">
                     <span className={`dt-verdict ${v.cls}`}>{v.label}</span>
+                    {r.experimental && (
+                      <span
+                        className="dt-experimental"
+                        title="This engine is not yet validated — the result may be wrong."
+                      >
+                        unvalidated
+                      </span>
+                    )}
                     {typeof r.riskScore === 'number' && (
                       <span className="dt-score">{Math.round(r.riskScore)}%</span>
                     )}

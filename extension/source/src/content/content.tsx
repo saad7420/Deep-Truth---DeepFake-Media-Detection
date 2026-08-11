@@ -302,8 +302,20 @@ function applyUpdate(record: ScanRecord): void {
             ? '?'
             : '⚠';
 
-    const detail = record.error ?? record.explanation ?? `Case ${record.caseId}`;
-    paint(t.badge, status, `${icon} ${p.text}${score}`, detail);
+    // An unvalidated engine gets a visible marker, not just a longer
+    // tooltip — someone glancing at a red badge reading "Manipulated 99%"
+    // should be able to see that the number is provisional without hovering.
+    const flask = record.experimental ? ' \u{1F9EA}' : '';
+    const detail = [
+      record.experimental
+        ? 'UNVALIDATED MODEL — provisional result, may report real media as fake.'
+        : null,
+      record.error ?? record.explanation ?? `Case ${record.caseId}`,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+
+    paint(t.badge, status, `${icon} ${p.text}${score}${flask}`, detail);
   });
 }
 

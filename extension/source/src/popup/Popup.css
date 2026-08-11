@@ -396,6 +396,21 @@ input:focus-visible {
   background: rgba(100, 116, 139, 0.12);
 }
 
+/* Marks a verdict from an engine that has not been validated against
+   real-world data. Deliberately not styled as a subtle hint — a provisional
+   result presented like a confirmed one is the failure this guards against. */
+.dt-experimental {
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(251, 146, 60, 0.35);
+  background: rgba(251, 146, 60, 0.12);
+  color: #fdba74;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .dt-score {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11px;

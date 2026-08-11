@@ -68,6 +68,8 @@ export interface ScanRecord {
   explanation?: string;
   /** Set when the scan never reached the server at all. */
   error?: string;
+  /** True when the engine that produced this verdict is not yet validated. */
+  experimental?: boolean;
   timestamp: number;
 }
 

@@ -12,7 +12,7 @@
    ========================================================================= */
 
 import { useEffect, useState } from "react";
-import { ChevronDown, Info, ShieldQuestion } from "lucide-react";
+import { ChevronDown, FlaskConical, Info, ShieldQuestion } from "lucide-react";
 
 import { cn } from "@/app/lib/utils";
 import {
@@ -168,6 +168,27 @@ export function ResultBarChart({
           </p>
         )}
       </div>
+
+      {/* ── Unvalidated checkpoint ────────────────────────────────────────────
+          Sits above the score deliberately. A model that has not been checked
+          against real-world data can be confidently wrong, and a reader who
+          scrolls past the number without seeing this has been misled by the
+          interface rather than by the model. */}
+      {summary?.isExperimental && !neutral && (
+        <div className="flex gap-3 rounded-lg border border-orange-500/30 bg-orange-500/10 px-3.5 py-3">
+          <FlaskConical className="mt-0.5 h-4 w-4 shrink-0 text-orange-400" />
+          <div className="min-w-0 space-y-1">
+            <p className="text-xs font-semibold text-orange-300">
+              Unvalidated model — treat this verdict as provisional
+            </p>
+            <p className="text-[11px] leading-relaxed text-slate-400">
+              This checkpoint has not been confirmed against diverse real-world
+              recordings. It may report genuine media as fake. Use it to exercise the
+              pipeline, not to support a conclusion about this file.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ── Neutral notice ───────────────────────────────────────────────── */}
       {neutral && (

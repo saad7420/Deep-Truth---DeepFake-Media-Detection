@@ -29,6 +29,7 @@ import {
   explain,
   fetchMedia,
   getCase,
+  isExperimental,
   isSettled,
 } from '../lib/api';
 import {
@@ -111,6 +112,7 @@ function recordFromCase(c: CaseResponse, base: ScanRecord): ScanRecord {
     status: c.status,
     riskScore: c.status === 'processing' ? undefined : c.riskScore,
     explanation: explain(c),
+    experimental: isExperimental(c),
     timestamp: Date.now(),
   };
 }

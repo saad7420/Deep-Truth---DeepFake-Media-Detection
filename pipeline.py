@@ -95,10 +95,20 @@ class Pipeline:
         return result
 
     def _default_modalities(self, info: MediaInfo) -> list[str]:
-        # When the audio model lands, change the video branch to ["video", "audio"]
-        # for files where info.has_audio. The plumbing is already there.
+        """Which modalities to run when the caller does not say.
+
+        A video carrying an audio track gets both branches. A face swap and a
+        cloned voice are independent manipulations — a clip can be visually
+        untouched but carry synthesised speech, and analysing only the frames
+        would report it clean.
+
+        Note this only applies when `modalities` is left unspecified.
+        VisualForensicsEngine passes `modalities=["video"]` explicitly, so the
+        server's per-case routing is unaffected; this governs cli.py and any
+        direct Pipeline use.
+        """
         if info.kind == "video":
-            return ["video"]
+            return ["video", "audio"] if info.has_audio else ["video"]
         if info.kind == "audio":
             return ["audio"]
         if info.kind == "image":

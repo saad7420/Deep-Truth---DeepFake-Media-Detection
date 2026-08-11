@@ -8,11 +8,29 @@ these concrete classes directly.
 """
 from __future__ import annotations
 
+import os
+
 from app.engines.base import Engine
 from app.engines.visual.engine import VisualForensicsEngine
 from app.engines.image.engine import ImageForensicsEngine
 from app.engines.audio.stub import AudioFakeNetStub
+from app.engines.audio.wavlm import WavLMAudioEngine
 from app.engines.srm.stub import SRMNoiseStub
+
+
+def _audio_engine() -> Engine:
+    """Real WavLM engine when a checkpoint is configured, stub otherwise.
+
+    Selection is by environment rather than by editing this file, so the same
+    build runs with or without the audio model and nobody has to remember to
+    revert a code change. WavLMAudioEngine loads lazily and degrades to a
+    neutral result if the checkpoint turns out to be bad, so setting the
+    variable can never stop the server from starting — the worst case is
+    audio reporting "no signal", which is exactly what the stub does anyway.
+    """
+    if os.getenv("DEEPTRUTH_AUDIO_CHECKPOINT"):
+        return WavLMAudioEngine()
+    return AudioFakeNetStub()
 
 
 class EngineRegistry:
@@ -20,8 +38,8 @@ class EngineRegistry:
         self._engines: dict[str, Engine] = {
             "visual": VisualForensicsEngine(),   # M7  — real (video, ViViT)
             "image":  ImageForensicsEngine(),    # M7b — real (image, ViT-B/16)
-            "audio":  AudioFakeNetStub(),        # M6 — stub, swap when ready
-            "srm":    SRMNoiseStub(),            # M8 — stub, swap when ready
+            "audio":  _audio_engine(),           # M6  — real iff a checkpoint is set
+            "srm":    SRMNoiseStub(),            # M8  — stub, swap when ready
         }
 
     def get(self, modality: str) -> Engine | None:

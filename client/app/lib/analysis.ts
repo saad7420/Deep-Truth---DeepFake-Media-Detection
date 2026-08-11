@@ -49,6 +49,8 @@ const CHECKPOINT_LABELS: Record<string, string> = {
   ntire: "NTIRE",
   dff: "DiffusionFace",
   ffpp_facecrop: "FaceForensics++ (face crop)",
+  // audio — WavLM-Large + 3-layer head
+  wavlm_large: "WavLM-Large",
 };
 
 /** One line on what each adapter is good at, shown on hover in the breakdown. */
@@ -66,6 +68,7 @@ const CHECKPOINT_BLURBS: Record<string, string> = {
   ntire: "Restoration and super-resolution artefacts",
   dff: "Diffusion-generated faces specifically",
   ffpp_facecrop: "FaceForensics++ scored on the cropped face only",
+  wavlm_large: "Synthesised speech and voice cloning (ASVspoof)",
 };
 
 /** Summary-row names the backend can emit, mapped to the modality they cover. */
@@ -101,7 +104,25 @@ export interface ImageEvidence {
   heatmap_path?: string | null;
 }
 
-export interface SummaryEvidence extends VideoEvidence, ImageEvidence {
+/** Keys the audio (WavLM-Large) engine puts in `evidence`. */
+export interface AudioEvidence {
+  rationale?: string;
+  /** Decision threshold actually used. Heavy class weighting during training
+      pushes this far from 0.5 — it is read from the checkpoint's
+      metadata.json rather than assumed. */
+  threshold?: number;
+  sample_rate?: number;
+  max_audio_sec?: number;
+  /** True while the checkpoint has not been validated on diverse real audio. */
+  experimental?: boolean;
+  /** The model's untouched output, before threshold-anchored rescaling. */
+  raw_fake_prob?: number;
+  /** True when the displayed risk score was rescaled around the model's
+      own decision threshold rather than being the raw network output. */
+  calibrated?: boolean;
+}
+
+export interface SummaryEvidence extends VideoEvidence, ImageEvidence, AudioEvidence {
   tier?: string;
   modality?: string;
   fake_prob?: number;
@@ -141,6 +162,10 @@ export interface SummaryRow {
   evidence: SummaryEvidence;
   /** True when the engine declined to contribute (stub, or a caught failure). */
   isNeutral: boolean;
+  /** True when the checkpoint behind this result is not yet validated for
+      production use. Set by the audio engine while
+      DEEPTRUTH_AUDIO_EXPERIMENTAL is on. */
+  isExperimental: boolean;
   label: string;
 }
 
@@ -191,6 +216,7 @@ function toSummary(row: Row): SummaryRow {
     // The engine contract: confidence 0 means the result carries no
     // information and must never drive a verdict.
     isNeutral: confidence <= 0,
+    isExperimental: evidence.experimental === true,
     label: row.label,
   };
 }
@@ -270,6 +296,38 @@ export function explainEvidence(summary: SummaryRow | undefined): string[] {
       "A face was detected but the crop was not clean enough to trust, so the face adapters were down-weighted.",
     );
   }
+  // Audio branch
+  if (typeof e.max_audio_sec === "number") {
+    lines.push(
+      `A single WavLM-Large model scored the first ${e.max_audio_sec} seconds of audio at ${e.sample_rate ? `${e.sample_rate / 1000} kHz` : "16 kHz"} mono. Unlike the video and image channels there is no ensemble here — one model, one score.`,
+    );
+  }
+  // The audio threshold is routinely nowhere near 0.5. ASVspoof training data
+  // is roughly 1:9 bonafide:spoof, and the class weighting used to correct
+  // that squeezes the model's raw scores toward zero. The equal-error point
+  // measured on the dev set is what the verdict actually uses, so showing the
+  // raw percentage without it invites the reader to judge "0.4%" against a
+  // mental 50% baseline and conclude the opposite of what the model found.
+  if (
+    e.calibrated === true &&
+    typeof e.threshold === "number" &&
+    typeof e.raw_fake_prob === "number"
+  ) {
+    const thr =
+      e.threshold < 0.01 ? e.threshold.toExponential(2) : e.threshold.toFixed(4);
+    const raw =
+      e.raw_fake_prob < 0.01
+        ? e.raw_fake_prob.toExponential(2)
+        : `${(e.raw_fake_prob * 100).toFixed(2)}%`;
+    lines.push(
+      `The model's raw output was ${raw}, judged against its own decision threshold of ${thr} rather than 50% — heavy class balancing during training pushes its scores toward zero. The score shown above has been rescaled so that threshold sits at the 50% mark, which is what makes it comparable to the video and image channels. The rescaling preserves ranking exactly; it moves the midpoint, it does not add separation.`,
+    );
+  } else if (typeof e.threshold === "number" && (e.threshold < 0.4 || e.threshold > 0.6)) {
+    lines.push(
+      `Scores are judged against a threshold of ${e.threshold < 0.01 ? e.threshold.toExponential(2) : e.threshold.toFixed(4)}, not 50%.`,
+    );
+  }
+
   if (Array.isArray(e.skipped) && e.skipped.length > 0) {
     lines.push(
       `Skipped: ${e.skipped.join(", ")} — these adapters could not produce a usable score for this file.`,
@@ -299,6 +357,6 @@ export function engineNameFor(mediaType: MediaType): string {
   return {
     video: "Visual forensics — ViViT ensemble",
     image: "Image forensics — ViT-B/16 ensemble",
-    audio: "Audio forensics — AudioFakeNet",
+    audio: "Audio forensics — WavLM-Large",
   }[mediaType];
 }
