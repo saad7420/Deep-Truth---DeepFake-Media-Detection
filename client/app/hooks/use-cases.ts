@@ -9,6 +9,7 @@
    than the FastAPI service.
    ========================================================================= */
 
+import { useEffect } from "react";
 import {
   useMutation,
   useQuery,
@@ -20,7 +21,9 @@ import {
   ApiError,
   casesApi,
   healthApi,
+  queueApi,
   statsApi,
+  subscribeToJobs,
   type CaseListParams,
   type CreateCasePayload,
   type UpdateCasePayload,
@@ -36,10 +39,19 @@ export const caseKeys = {
   detail: (caseId: string) => ["cases", "detail", caseId] as const,
   stats: ["stats"] as const,
   health: ["health"] as const,
+  queue: ["queue"] as const,
 };
 
-/** How often a case still in `processing` is re-checked. */
-const POLL_MS = 2000;
+/**
+ * Fallback poll interval for a case still in `processing`.
+ *
+ * The backend now pushes transitions over SSE (`useJobStream`), so this is a
+ * safety net rather than the primary mechanism — hence 5s instead of the 2s
+ * it used to be. Polling is not removed: a buffering proxy or a suspended
+ * laptop can silence the stream, and a finished analysis that the operator
+ * never sees is worse than an extra request every few seconds.
+ */
+const POLL_MS = 5000;
 
 /* ── Reads ───────────────────────────────────────────────────────────────── */
 
@@ -95,6 +107,68 @@ export function useHealth() {
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
+}
+
+/* ── Queue ───────────────────────────────────────────────────────────────── */
+
+/**
+ * Queue depth, worker census and cache hit rate.
+ *
+ * Polled on a short interval rather than driven by the event stream: this is
+ * whole-system state (how many workers are alive, how deep the backlog is),
+ * which changes for reasons no single job's transition reports — a worker
+ * being started or dying, for instance.
+ */
+export function useQueueOverview(enabled = true) {
+  return useQuery({
+    queryKey: caseKeys.queue,
+    queryFn: () => queueApi.overview(),
+    enabled,
+    retry: false,
+    refetchInterval: 5_000,
+    staleTime: 2_000,
+  });
+}
+
+/**
+ * Subscribe to backend-pushed job transitions and refresh the affected
+ * queries as they arrive.
+ *
+ * Pass a `caseId` on a case detail or report page to receive only that case's
+ * events; omit it on a dashboard to follow the whole queue.
+ *
+ * The handler invalidates rather than writing the event into the cache
+ * directly. The event carries the job record, but what the page renders is
+ * the *case* — verdict, risk score, per-checkpoint rows — and only the API
+ * has those. Invalidating triggers one refetch that brings all of it in a
+ * consistent shape, instead of leaving a case whose job says "succeeded"
+ * alongside analysis rows that are still empty.
+ */
+export function useJobStream(caseId?: string) {
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    const unsubscribe = subscribeToJobs({
+      caseId,
+      onJob: (event) => {
+        const settled =
+          event.state === "succeeded" ||
+          event.state === "failed" ||
+          event.state === "cached";
+
+        if (caseId) {
+          qc.invalidateQueries({ queryKey: caseKeys.detail(caseId) });
+        } else {
+          qc.invalidateQueries({ queryKey: caseKeys.all });
+        }
+
+        qc.invalidateQueries({ queryKey: caseKeys.queue });
+        if (settled) qc.invalidateQueries({ queryKey: caseKeys.stats });
+      },
+    });
+
+    return unsubscribe;
+  }, [caseId, qc]);
 }
 
 /* ── Writes ──────────────────────────────────────────────────────────────── */

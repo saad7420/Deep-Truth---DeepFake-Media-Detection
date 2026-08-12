@@ -53,6 +53,37 @@ class CaseUpdate(BaseModel):
     notes: Optional[str] = None
 
 
+class JobState(BaseModel):
+    """Live orchestration state for a case, read from Redis (app/queue/state.py).
+
+    Separate from `CaseStatus`: that field records what the analysis
+    *concluded*, this one records what the job is *doing*. A case can be
+    `status="processing"` while its job is `state="retrying"` on attempt 2,
+    and the console needs to show the difference.
+
+    None on a `CaseResponse` means the queue has no record — a case older than
+    the state retention window, not an error.
+    """
+    state: Literal["queued", "running", "retrying", "succeeded", "failed", "cached"]
+    case_id: Optional[str] = Field(None, alias="caseId")
+    media_type: Optional[str] = Field(None, alias="mediaType")
+    #: 1-based place in line; None once the job is no longer waiting.
+    position: Optional[int] = None
+    attempt: int = 0
+    max_attempts: int = Field(0, alias="maxAttempts")
+    worker: Optional[str] = None
+    queued_at: Optional[float] = Field(None, alias="queuedAt")
+    started_at: Optional[float] = Field(None, alias="startedAt")
+    finished_at: Optional[float] = Field(None, alias="finishedAt")
+    retry_at: Optional[float] = Field(None, alias="retryAt")
+    error: Optional[str] = None
+    cache_hit: bool = Field(False, alias="cacheHit")
+    content_hash: Optional[str] = Field(None, alias="contentHash")
+    source_url: Optional[str] = Field(None, alias="sourceUrl")
+
+    model_config = {"populate_by_name": True}
+
+
 class CaseResponse(BaseModel):
     """Shape the frontend expects (camelCase via alias)."""
     id: str
@@ -70,6 +101,7 @@ class CaseResponse(BaseModel):
     created_at: Optional[datetime] = Field(None, alias="createdAt")
     updated_at: Optional[datetime] = Field(None, alias="updatedAt")
     analysis_results: List[AnalysisResult] = Field(default_factory=list, alias="analysisResults")
+    job: Optional[JobState] = None
 
     model_config = {"populate_by_name": True, "from_attributes": True}
 
@@ -96,6 +128,10 @@ class DashboardStats(BaseModel):
 # ── Health ────────────────────────────────────────────────────────────────────
 
 class HealthResponse(BaseModel):
+    #: "ok" | "idle" (no workers) | "degraded" (db or redis unreachable)
     status: str
     version: str
     db: str
+    redis: str = "unknown"
+    #: Celery workers currently answering a control ping.
+    workers: int = 0

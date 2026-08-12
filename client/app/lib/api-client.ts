@@ -17,12 +17,16 @@ import {
   CaseListResponseSchema,
   DashboardStatsSchema,
   HealthResponseSchema,
+  JobStateSchema,
+  QueueOverviewSchema,
   type Case,
   type CaseListResponse,
   type CaseStatus,
   type DashboardStats,
   type HealthResponse,
+  type JobState,
   type MediaType,
+  type QueueOverview,
 } from "@/app/shared/schema";
 
 /* ── Configuration ───────────────────────────────────────────────────────── */
@@ -134,6 +138,13 @@ export interface CreateCasePayload {
   file: File;
   userId?: string;
   notes?: string;
+  /**
+   * Page URL this media was captured from. Optional, and only the extension
+   * normally sets it: the server uses it as a secondary cache key so the same
+   * media encountered again at the same URL resolves without re-downloading
+   * and re-analysing it.
+   */
+  sourceUrl?: string;
 }
 
 export interface UpdateCasePayload {
@@ -176,6 +187,7 @@ export const casesApi = {
     form.append("file", payload.file);
     if (payload.userId) form.append("user_id", payload.userId);
     if (payload.notes) form.append("notes", payload.notes);
+    if (payload.sourceUrl) form.append("source_url", payload.sourceUrl);
 
     if (!onProgress) {
       return request(`/cases`, { method: "POST", body: form }, (raw) => CaseSchema.parse(raw));
@@ -246,11 +258,89 @@ export const statsApi = {
 };
 
 export const healthApi = {
-  /** GET /health — service + database reachability. */
+  /** GET /health — service, database, Redis, and worker-pool reachability. */
   get(): Promise<HealthResponse> {
     return request(`/health`, { method: "GET" }, (raw) => HealthResponseSchema.parse(raw));
   },
 };
+
+/* ── Queue ───────────────────────────────────────────────────────────────── */
+
+export const queueApi = {
+  /** GET /queue — depth, worker census, cache hit rate. */
+  overview(): Promise<QueueOverview> {
+    return request(`/queue`, { method: "GET" }, (raw) => QueueOverviewSchema.parse(raw));
+  },
+
+  /** GET /queue/cases/{case_id} — one case's live job record. */
+  forCase(caseId: string): Promise<JobState> {
+    return request(
+      `/queue/cases/${encodeURIComponent(caseId)}`,
+      { method: "GET" },
+      (raw) => JobStateSchema.parse(raw),
+    );
+  },
+};
+
+/* ── Live job events (SSE) ────────────────────────────────────────────────────
+   The backend pushes every state transition on `/queue/stream`. This wraps
+   `EventSource` so callers get a typed callback and one function to stop.
+
+   EventSource is used rather than a WebSocket because the console only ever
+   listens — there is nothing to send upstream — and the browser handles
+   reconnection with backoff for free. Note that it cannot carry custom
+   headers; that is fine here because the API takes no auth, and it is worth
+   knowing before anyone adds a bearer token to this service.
+
+   Callers must keep polling as a fallback. A proxy that buffers responses, a
+   sleeping laptop, or a dropped connection can all silence the stream, and a
+   verdict that arrives only on a socket nobody is listening to is a verdict
+   the operator never sees.
+   ------------------------------------------------------------------------- */
+
+export interface JobEvent extends Partial<JobState> {
+  caseDbId?: string | null;
+}
+
+export interface SubscribeOptions {
+  /** Restrict the stream to one case. Omit to receive every transition. */
+  caseId?: string;
+  onJob?: (event: JobEvent) => void;
+  onSnapshot?: (event: JobEvent & { pendingDepth?: number }) => void;
+  onError?: (error: Event) => void;
+}
+
+/** Opens the stream. Returns an unsubscribe function — always call it on unmount. */
+export function subscribeToJobs(options: SubscribeOptions = {}): () => void {
+  if (typeof window === "undefined" || typeof EventSource === "undefined") {
+    return () => {};
+  }
+
+  const qs = options.caseId ? `?case_id=${encodeURIComponent(options.caseId)}` : "";
+  const source = new EventSource(`${API_BASE}/queue/stream${qs}`);
+
+  const parse = (raw: string): JobEvent | null => {
+    try {
+      return JSON.parse(raw) as JobEvent;
+    } catch {
+      return null;
+    }
+  };
+
+  source.addEventListener("snapshot", (e) => {
+    const payload = parse((e as MessageEvent).data);
+    if (payload) options.onSnapshot?.(payload);
+  });
+
+  source.addEventListener("job", (e) => {
+    const payload = parse((e as MessageEvent).data);
+    if (payload) options.onJob?.(payload);
+  });
+
+  source.onerror = (e) => options.onError?.(e);
+
+  return () => source.close();
+}
 
 /* ── Helpers shared by the UI ────────────────────────────────────────────── */
 

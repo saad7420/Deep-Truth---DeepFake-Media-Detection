@@ -34,6 +34,18 @@ python-multipart
 aiosqlite>=0.20.0
 python-dotenv
 
+# ── Asynchronous task orchestration (M5) ──────────────────────────────────────
+# Celery moves inference off the API process onto worker processes, so several
+# uploads are analysed at once instead of serialising behind one event loop,
+# and a failed run is retried rather than reported to the user as an error.
+# Redis is both the broker and the hot-result cache (app/queue/cache.py).
+#
+# celery>=5.4 for Python 3.12+/3.13 support: 5.3.x pulls a billiard that fails
+# to build there. redis>=5 because app/queue/state.py relies on the client
+# exposing zrank/zadd through the same connection pool used for pub/sub.
+celery>=5.4
+redis>=5.0
+
 # ── Audio (M6, still a stub engine) ───────────────────────────────────────────
 # Needed only once deeptruth_pipeline/inferencers/audio.py replaces
 # AudioFakeNetStub; harmless to install ahead of that.

@@ -34,6 +34,36 @@ export interface AnalysisRow {
   created_at: string;
 }
 
+/** Matches JobState in server/app/models.py — what the *job* is doing, as
+    opposed to what the analysis concluded. Null on cases older than the
+    queue's state retention. */
+export interface JobState {
+  state: 'queued' | 'running' | 'retrying' | 'succeeded' | 'failed' | 'cached';
+  position?: number | null;
+  attempt: number;
+  maxAttempts: number;
+  worker?: string | null;
+  error?: string | null;
+  cacheHit: boolean;
+}
+
+/** Reply from GET /api/cache/lookup. A miss is a normal 200 with hit=false. */
+export interface CacheLookup {
+  hit: boolean;
+  mediaType: MediaType;
+  contentHash?: string | null;
+  normalisedUrl?: string | null;
+  status?: CaseStatus;
+  riskScore?: number;
+  syntheticLikelihood?: number;
+  computedAt?: number | null;
+  sourceCaseDbId?: string | null;
+  /** Public CASE-XXXXXXXX id of the case that produced this verdict. Absent
+      for entries cached before the server started recording it. */
+  sourceCaseId?: string | null;
+  analysisResults?: Omit<AnalysisRow, 'id' | 'case_id' | 'created_at'>[];
+}
+
 /** The server's CaseResponse, camelCase as serialised. */
 export interface CaseResponse {
   id: string;
@@ -50,6 +80,8 @@ export interface CaseResponse {
   createdAt?: string | null;
   updatedAt?: string | null;
   analysisResults: AnalysisRow[];
+  /** Live queue state. Absent on older servers; treat as "no information". */
+  job?: JobState | null;
 }
 
 /** What the extension keeps in chrome.storage.local per scanned element. */
@@ -70,6 +102,13 @@ export interface ScanRecord {
   error?: string;
   /** True when the engine that produced this verdict is not yet validated. */
   experimental?: boolean;
+  /**
+   * True when this verdict came from the server's cache rather than a fresh
+   * analysis — the media had been analysed before, so nothing was downloaded,
+   * uploaded, or recomputed. `caseId` then points at the earlier case, which
+   * means several scan records can share one case id.
+   */
+  fromCache?: boolean;
   timestamp: number;
 }
 
