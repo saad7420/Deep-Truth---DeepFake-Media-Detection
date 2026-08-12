@@ -31,6 +31,7 @@ import {
   getCase,
   isExperimental,
   isSettled,
+  lookupCachedUrl,
 } from '../lib/api';
 import {
   DEFAULT_SETTINGS,
@@ -208,6 +209,32 @@ async function startAnalysis(payload: StartAnalysisPayload): Promise<StartAnalys
   const { mediaUrl, pageUrl, mediaType } = payload;
 
   try {
+    // ── Cache pre-check ──────────────────────────────────────────────────
+    // Before downloading anything, ask whether this URL already has a
+    // verdict. On a hit the answer is immediate and the whole
+    // download → upload → poll cycle is skipped. The record links back to
+    // the case that originally produced the verdict, so the console still
+    // has one authoritative case rather than a duplicate per sighting.
+    //
+    // Skipped when the server is too old to know the case's public id:
+    // without it the record could not link anywhere, and a scan the operator
+    // cannot open is worse than one that took a few seconds longer.
+    const cached = await lookupCachedUrl(apiUrl, mediaUrl, mediaType);
+    if (cached?.sourceCaseId && cached.status) {
+      const record: ScanRecord = {
+        caseId: cached.sourceCaseId,
+        mediaUrl,
+        pageUrl,
+        mediaType,
+        status: cached.status,
+        riskScore: cached.riskScore,
+        fromCache: true,
+        timestamp: Date.now(),
+      };
+      await upsertRecord(record);
+      return { ok: true, caseId: cached.sourceCaseId };
+    }
+
     const { blob, contentType } = await fetchMedia(mediaUrl, mediaType);
     const c = await createCase(apiUrl, {
       blob,
@@ -215,6 +242,9 @@ async function startAnalysis(payload: StartAnalysisPayload): Promise<StartAnalys
       mediaType,
       title: buildTitle(pageUrl, mediaUrl),
       notes: `Captured by the Deep Truth extension from ${pageUrl}`,
+      // Teaches the server which URL serves these bytes, so the pre-check
+      // above can short-circuit the next encounter.
+      sourceUrl: mediaUrl,
     });
 
     const base: ScanRecord = {

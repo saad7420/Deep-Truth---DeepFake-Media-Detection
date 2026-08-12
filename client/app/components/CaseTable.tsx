@@ -20,6 +20,7 @@ import Link from "next/link";
 import { FileAudio, FileVideo, Image as ImageIcon, Trash2, type LucideIcon } from "lucide-react";
 
 import { ErrorState, Spinner } from "@/app/components/Primitives";
+import { JobBadge } from "@/app/components/JobStatus";
 import { StatusBadge } from "@/app/components/StatusBadge";
 import { formatBytes } from "@/app/lib/api-client";
 import { cn } from "@/app/lib/utils";
@@ -111,6 +112,7 @@ export function CaseTable({
 
               <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
                 <StatusBadge status={c.status} size="sm" />
+                {c.status === "processing" && <JobBadge job={c.job} size="sm" />}
                 <span className="inline-flex items-center gap-1.5 text-[11px] capitalize text-slate-400">
                   <Icon className="h-3 w-3 text-slate-500" />
                   {c.mediaType}
@@ -191,7 +193,13 @@ export function CaseTable({
                   </td>
 
                   <td className="whitespace-nowrap px-5 py-3.5">
-                    <StatusBadge status={c.status} size="sm" />
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <StatusBadge status={c.status} size="sm" />
+                      {/* Only while unsettled: on a finished case the verdict
+                          badge already says everything, and a second badge
+                          repeating "complete" is noise in a dense table. */}
+                      {c.status === "processing" && <JobBadge job={c.job} size="sm" />}
+                    </div>
                   </td>
 
                   <td className="whitespace-nowrap px-5 py-3.5 text-right">

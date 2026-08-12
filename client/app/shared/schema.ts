@@ -58,6 +58,75 @@ export const SummaryDetailsSchema = z.object({
   note: z.string().optional(),
 });
 
+/* ── Orchestration state ─────────────────────────────────────────────────────
+   Mirrors server/app/models.py JobState. Distinct from `CaseStatus` on
+   purpose: `status` is what the analysis *concluded*, `job.state` is what the
+   job is *doing*. A case can sit at status "processing" while its job is
+   "retrying" on attempt 2 of 3, and an operator watching an upload needs to
+   see that rather than an unexplained wait.
+
+   `job` is null for cases older than the queue's state retention. Treat that
+   as "no queue information", never as an error — those cases still have a
+   perfectly good verdict on them.
+   ------------------------------------------------------------------------- */
+
+export const JobStateSchema = z.object({
+  state: z.enum(["queued", "running", "retrying", "succeeded", "failed", "cached"]),
+  caseId: z.string().nullable().optional(),
+  mediaType: z.string().nullable().optional(),
+  /** 1-based place in line; null once the job is no longer waiting. */
+  position: z.number().nullable().optional(),
+  attempt: z.number().default(0),
+  maxAttempts: z.number().default(0),
+  worker: z.string().nullable().optional(),
+  queuedAt: z.number().nullable().optional(),
+  startedAt: z.number().nullable().optional(),
+  finishedAt: z.number().nullable().optional(),
+  retryAt: z.number().nullable().optional(),
+  error: z.string().nullable().optional(),
+  /** True when the verdict was replayed from cache instead of computed. */
+  cacheHit: z.boolean().default(false),
+  contentHash: z.string().nullable().optional(),
+  sourceUrl: z.string().nullable().optional(),
+});
+
+export const QueueWorkersSchema = z.object({
+  online: z.number(),
+  names: z.array(z.string()).default([]),
+  active: z.number(),
+  reserved: z.number(),
+  concurrency: z.number(),
+  reachable: z.boolean().default(false),
+});
+
+export const QueueCacheStatsSchema = z.object({
+  hits: z.number(),
+  misses: z.number(),
+  entries: z.number(),
+  hitRate: z.number(),
+  version: z.string(),
+});
+
+export const QueueOverviewSchema = z.object({
+  redisOnline: z.boolean(),
+  pendingDepth: z.number(),
+  workers: QueueWorkersSchema,
+  activeJobs: z
+    .array(
+      z.object({
+        worker: z.string(),
+        taskId: z.string().nullable().optional(),
+        caseDbId: z.string().nullable().optional(),
+        mediaType: z.string().nullable().optional(),
+        startedAt: z.number().nullable().optional(),
+      }),
+    )
+    .default([]),
+  cache: QueueCacheStatsSchema,
+  /** Operator-facing hint, e.g. "no workers online". Null when healthy. */
+  message: z.string().nullable().optional(),
+});
+
 /* ── Case ────────────────────────────────────────────────────────────────── */
 
 export const CaseSchema = z.object({
@@ -76,6 +145,7 @@ export const CaseSchema = z.object({
   createdAt: z.string().nullable().optional(),
   updatedAt: z.string().nullable().optional(),
   analysisResults: z.array(AnalysisResultSchema).default([]),
+  job: JobStateSchema.nullable().optional(),
 });
 
 /** GET /cases returns a pagination envelope, not a bare array. */
@@ -97,9 +167,12 @@ export const DashboardStatsSchema = z.object({
 });
 
 export const HealthResponseSchema = z.object({
+  /** "ok" | "idle" (no workers) | "degraded" (db or redis unreachable) */
   status: z.string(),
   version: z.string(),
   db: z.string(),
+  redis: z.string().default("unknown"),
+  workers: z.number().default(0),
 });
 
 /* ── Types ───────────────────────────────────────────────────────────────── */
@@ -112,6 +185,50 @@ export type Case = z.infer<typeof CaseSchema>;
 export type CaseListResponse = z.infer<typeof CaseListResponseSchema>;
 export type DashboardStats = z.infer<typeof DashboardStatsSchema>;
 export type HealthResponse = z.infer<typeof HealthResponseSchema>;
+export type JobState = z.infer<typeof JobStateSchema>;
+export type JobStateName = JobState["state"];
+export type QueueOverview = z.infer<typeof QueueOverviewSchema>;
+
+/* ── Job-state presentation ──────────────────────────────────────────────────
+   One map so a job reads the same in the sidebar, the case table and the
+   report header — the same reason VERDICT_PRESENTATION exists below.
+   ------------------------------------------------------------------------- */
+
+export const JOB_STATE_PRESENTATION: Record<
+  JobStateName,
+  { label: string; blurb: string; tone: "waiting" | "active" | "good" | "bad" }
+> = {
+  queued: {
+    label: "Queued",
+    blurb: "Waiting for a free worker.",
+    tone: "waiting",
+  },
+  running: {
+    label: "Analysing",
+    blurb: "A worker is running the models now.",
+    tone: "active",
+  },
+  retrying: {
+    label: "Retrying",
+    blurb: "The last attempt hit a transient error; it is queued again.",
+    tone: "waiting",
+  },
+  succeeded: {
+    label: "Complete",
+    blurb: "Analysis finished.",
+    tone: "good",
+  },
+  cached: {
+    label: "From cache",
+    blurb: "This exact file was analysed before; the stored verdict was reused.",
+    tone: "good",
+  },
+  failed: {
+    label: "Failed",
+    blurb: "Every attempt failed. See the error for details.",
+    tone: "bad",
+  },
+};
 
 /* ── Verdict presentation ────────────────────────────────────────────────────
    Every surface that shows a status - badges, tables, the report header -

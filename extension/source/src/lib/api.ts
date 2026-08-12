@@ -16,7 +16,7 @@
    the backend never sees the page, only the bytes we hand it.
    ========================================================================= */
 
-import type { CaseResponse, MediaType } from '../types';
+import type { CacheLookup, CaseResponse, MediaType } from '../types';
 
 /** Mirrors ALLOWED_TYPES in server/app/services/analyser.py exactly. The
     server re-validates, so this is only here to fail fast with a message
@@ -105,6 +105,42 @@ export async function checkHealth(apiUrl: string): Promise<{ ok: boolean; detail
   }
 }
 
+/* ── Cache pre-check ─────────────────────────────────────────────────────── */
+
+/**
+ * Ask the server whether this media URL already has a verdict, before
+ * spending anything on it.
+ *
+ * This is the cheapest possible path and it matters most here: the
+ * extension's normal flow downloads the media, uploads it, then polls for
+ * minutes. For media the server has already analysed — the same avatar on
+ * every page of a site, an image that has been through the queue for another
+ * user — every one of those steps is wasted. One GET replaces all of it.
+ *
+ * A miss is not an error, and neither is an unreachable server: both return
+ * null and the caller proceeds with the normal download-and-upload flow. A
+ * cache that is down must slow the extension, never break it.
+ */
+export async function lookupCachedUrl(
+  apiUrl: string,
+  mediaUrl: string,
+  mediaType: MediaType,
+): Promise<CacheLookup | null> {
+  // blob: and data: URLs are per-page identifiers with no meaning across
+  // sessions; the server rejects them anyway, so don't spend a request.
+  if (!/^https?:/i.test(mediaUrl)) return null;
+
+  const qs = new URLSearchParams({ media_type: mediaType, url: mediaUrl });
+  try {
+    const res = await fetch(`${apiBase(apiUrl)}/cache/lookup?${qs.toString()}`);
+    if (!res.ok) return null;
+    const body = (await res.json()) as CacheLookup;
+    return body.hit ? body : null;
+  } catch {
+    return null;
+  }
+}
+
 /* ── Media retrieval ─────────────────────────────────────────────────────── */
 
 /**
@@ -188,7 +224,17 @@ export function buildTitle(pageUrl: string, mediaUrl: string): string {
  */
 export async function createCase(
   apiUrl: string,
-  opts: { blob: Blob; contentType: string; mediaType: MediaType; title: string; notes?: string },
+  opts: {
+    blob: Blob;
+    contentType: string;
+    mediaType: MediaType;
+    title: string;
+    notes?: string;
+    /** The media URL these bytes came from. Sent so the server can index this
+        content hash against the URL, which is what makes the next encounter
+        resolvable by `lookupCachedUrl` without downloading anything. */
+    sourceUrl?: string;
+  },
 ): Promise<CaseResponse> {
   const ext = EXT_FOR_MIME[opts.contentType] ?? '.bin';
   const file = new File([opts.blob], `capture${ext}`, { type: opts.contentType });
@@ -198,6 +244,7 @@ export async function createCase(
   form.append('media_type', opts.mediaType);
   form.append('file', file);
   if (opts.notes) form.append('notes', opts.notes);
+  if (opts.sourceUrl) form.append('source_url', opts.sourceUrl);
 
   let res: Response;
   try {

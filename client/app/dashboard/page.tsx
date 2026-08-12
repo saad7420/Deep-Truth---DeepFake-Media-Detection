@@ -22,12 +22,18 @@ import {
   StatTile,
 } from "@/app/components/Primitives";
 import { Button } from "@/app/components/ui/button";
-import { useCases, useStats } from "@/app/hooks/use-cases";
+import { QueuePanel } from "@/app/components/QueuePanel";
+import { useCases, useJobStream, useStats } from "@/app/hooks/use-cases";
 import { riskTone } from "@/app/shared/schema";
 import { cn } from "@/app/lib/utils";
 
 export default function DashboardPage() {
   const { data: stats, isLoading: statsLoading } = useStats();
+
+  // Unfiltered stream: the dashboard follows every case, so a job finishing
+  // anywhere refreshes the tiles and the recent-cases table without waiting
+  // for the next poll.
+  useJobStream();
   const { data: list, isLoading: listLoading, isError, error, refetch } = useCases({ pageSize: 8 });
 
   const recent = list?.cases ?? [];
@@ -100,6 +106,9 @@ export default function DashboardPage() {
           href="/cases"
         />
       </div>
+
+      {/* ── Orchestration health ──────────────────────────────────────────── */}
+      <QueuePanel />
 
       {/* ── Mean risk + queue split ───────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">

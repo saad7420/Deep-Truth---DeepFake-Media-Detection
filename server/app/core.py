@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 import os
 
 from app.database import init_db
-from app.routers import cases, health
+from app.routers import cases, health, queue
 
 
 @asynccontextmanager
@@ -70,5 +70,6 @@ def create_app() -> FastAPI:
     # ── Routers ───────────────────────────────────────────────────────────────
     application.include_router(health.router, prefix="/api", tags=["health"])
     application.include_router(cases.router, prefix="/api", tags=["cases"])
+    application.include_router(queue.router, prefix="/api", tags=["queue"])
 
     return application

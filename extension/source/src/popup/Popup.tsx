@@ -241,6 +241,14 @@ const Popup: React.FC = () => {
                         unvalidated
                       </span>
                     )}
+                    {r.fromCache && (
+                      <span
+                        className="dt-cached"
+                        title="This media had already been analysed. The stored verdict was reused — nothing was uploaded or recomputed."
+                      >
+                        cached
+                      </span>
+                    )}
                     {typeof r.riskScore === 'number' && (
                       <span className="dt-score">{Math.round(r.riskScore)}%</span>
                     )}

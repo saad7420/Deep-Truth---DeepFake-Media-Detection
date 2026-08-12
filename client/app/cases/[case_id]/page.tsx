@@ -29,6 +29,7 @@ import {
 import AppShell from "@/app/components/AppShell";
 import { MEDIA_ICON } from "@/app/components/CaseTable";
 import { ConfirmDialog } from "@/app/components/ConfirmDialog";
+import { JobBadge, JobStatusPanel } from "@/app/components/JobStatus";
 import { MediaPreview } from "@/app/components/MediaPreview";
 import {
   ErrorState,
@@ -43,7 +44,7 @@ import { StatusBadge } from "@/app/components/StatusBadge";
 import { Button } from "@/app/components/ui/button";
 import { Textarea } from "@/app/components/ui/textarea";
 import { useToast } from "@/app/hooks/use-toast";
-import { useCase, useDeleteCase, useUpdateCase } from "@/app/hooks/use-cases";
+import { useCase, useDeleteCase, useJobStream, useUpdateCase } from "@/app/hooks/use-cases";
 import { ApiError, formatBytes, resolveMediaUrl } from "@/app/lib/api-client";
 import { cn } from "@/app/lib/utils";
 import { engineNameFor, readAnalysis } from "@/app/lib/analysis";
@@ -56,6 +57,10 @@ export default function CaseReportPage() {
 
   const caseId = params?.case_id;
   const { data: c, isLoading, isError, error, refetch, isFetching } = useCase(caseId);
+
+  // Backend-pushed transitions for this case. The `useCase` poll above stays
+  // as the fallback — see useJobStream's note on why both exist.
+  useJobStream(caseId);
 
   const updateCase = useUpdateCase();
   const deleteCase = useDeleteCase();
@@ -180,6 +185,7 @@ export default function CaseReportPage() {
                 {c.caseId}
               </button>
               <StatusBadge status={c.status} size="sm" />
+              <JobBadge job={c.job} size="sm" />
               <span className="inline-flex items-center gap-1.5 text-xs capitalize text-slate-500">
                 <MediaIcon className="h-3.5 w-3.5" />
                 {c.mediaType}
@@ -212,6 +218,12 @@ export default function CaseReportPage() {
                   : engineNameFor(c.mediaType)}
               </span>
             )}
+
+            {/* Why this case is waiting, retrying, or failed — and, on a
+                cache hit, why the verdict appeared instantly. */}
+            <div className="mt-4 max-w-2xl">
+              <JobStatusPanel job={c.job} />
+            </div>
           </div>
 
           {/* Risk dial */}
