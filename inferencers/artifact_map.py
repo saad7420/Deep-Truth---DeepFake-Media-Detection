@@ -57,6 +57,7 @@ map at all, because it looks like evidence.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -75,25 +76,40 @@ FAKE_CLASS = 1
 # CAM computation
 # ─────────────────────────────────────────────────────────────────────────────
 
+#: Attribute the transformer trunk hides under, per architecture. ViT for
+#: images, ViViT for video — the two are structurally identical from this
+#: module's point of view, differing only in how many tokens come back.
+_TRUNK_ATTRS = ("vit", "vivit")
+
+
 def _cam_target_layer(call_target):
     """The module to hook: the last block's pre-attention layernorm.
 
     See the module docstring for why this is not the last block's *output* —
     patch tokens there have zero gradient, because the classifier reads CLS
-    only. Falls back to the second-to-last block's output, which is the same
-    tensor modulo that layernorm, if the attribute is ever renamed upstream.
+    only. That is true of `VivitForVideoClassification` for exactly the same
+    reason it is true of the image model, so both take this path. Falls back
+    to the second-to-last block's output if the attribute is ever renamed
+    upstream.
 
-    The `.vit` lookup is defensive: the model may arrive bare or wrapped by
+    The trunk lookup is defensive: the model may arrive bare or wrapped by
     PEFT, and the two do not agree on where the submodule lives.
     """
-    vit = getattr(call_target, "vit", None)
-    if vit is None:
-        base = getattr(call_target, "base_model", None)
-        vit = getattr(base, "vit", None) if base is not None else None
-    if vit is None:
-        raise AttributeError("could not locate the ViT submodule for hooking")
+    trunk = None
+    for holder in (call_target, getattr(call_target, "base_model", None)):
+        if holder is None:
+            continue
+        for attr in _TRUNK_ATTRS:
+            trunk = getattr(holder, attr, None)
+            if trunk is not None:
+                break
+        if trunk is not None:
+            break
 
-    layers = vit.encoder.layer
+    if trunk is None:
+        raise AttributeError("could not locate the transformer trunk for hooking")
+
+    layers = trunk.encoder.layer
     target = getattr(layers[-1], "layernorm_before", None)
     if target is not None:
         return target
@@ -103,17 +119,17 @@ def _cam_target_layer(call_target):
     raise AttributeError("no usable layer to hook for Grad-CAM")
 
 
-def compute_cam(model, pixel_values, target_class: int = FAKE_CLASS) -> np.ndarray | None:
-    """A 14x14 relevance map for `target_class`, normalised to [0, 1].
+def _token_relevance(model, pixel_values, target_class: int,
+                     forward_kwargs: dict | None = None) -> np.ndarray | None:
+    """Per-patch-token relevance, CLS dropped. Shared by image and video.
 
-    Returns None if anything prevents a map being produced — a model whose
-    internals are shaped differently, or a graph that carried no gradient.
-    Callers treat that as "no map for this checkpoint", never as an error:
-    a missing overlay is a cosmetic loss, a failed case is not.
+    Returns a 1-D array of length n_patch_tokens, un-normalised and already
+    passed through ReLU, or None if no map could be produced. The caller
+    reshapes it: 14x14 for a still, (T, 14, 14) for a clip.
     """
     import torch
 
-    # Same PEFT forward-signature workaround as ImageInferencer._forward.
+    # Same PEFT forward-signature workaround as the inferencers use.
     call_target = model.get_base_model() if hasattr(model, "get_base_model") else model
 
     try:
@@ -143,7 +159,7 @@ def compute_cam(model, pixel_values, target_class: int = FAKE_CLASS) -> np.ndarr
         # on the checkpoints that score lowest, which is exactly where a map
         # would be most misleading.
         with torch.enable_grad():
-            out = call_target(pixel_values=px)
+            out = call_target(pixel_values=px, **(forward_kwargs or {}))
             logit = out.logits[0, target_class]
             call_target.zero_grad(set_to_none=True)
             logit.backward()
@@ -153,19 +169,13 @@ def compute_cam(model, pixel_values, target_class: int = FAKE_CLASS) -> np.ndarr
             log.warning("artifact map: no gradient reached the hooked block")
             return None
 
-        # (1, 197, 768) -> drop CLS, which has no position to draw.
+        # (1, 1 + n_patches, 768) -> drop CLS, which has no position to draw.
         a = act.detach()[0, 1:, :]
         g = act.grad.detach()[0, 1:, :]
 
-        n_tokens = a.shape[0]
-        if n_tokens != GRID * GRID:
-            log.warning(f"artifact map: expected {GRID * GRID} patch tokens, "
-                        f"got {n_tokens}")
-            return None
-
         weights = g.mean(dim=0)                       # (768,)
-        cam = torch.relu((a * weights).sum(dim=-1))   # (196,)
-        cam = cam.reshape(GRID, GRID).cpu().numpy().astype(np.float32)
+        rel = torch.relu((a * weights).sum(dim=-1))   # (n_patches,)
+        return rel.cpu().numpy().astype(np.float32)
 
     except Exception as exc:  # noqa: BLE001 — a map is never worth a failed case
         log.warning(f"artifact map: CAM computation failed: {exc}")
@@ -173,14 +183,72 @@ def compute_cam(model, pixel_values, target_class: int = FAKE_CLASS) -> np.ndarr
     finally:
         handle.remove()
 
-    peak = float(cam.max())
-    if not np.isfinite(peak) or peak <= 0:
-        # Every contribution was negative or zero: this checkpoint found
-        # nothing it considers synthetic. A flat map is the truthful output,
-        # and normalising it would manufacture structure out of noise.
-        return np.zeros((GRID, GRID), dtype=np.float32)
 
-    return cam / peak
+def _normalise(arr: np.ndarray) -> np.ndarray:
+    """Scale to [0,1], or return all-zeros when there is nothing to scale.
+
+    A flat-zero map means the checkpoint found nothing it considers
+    synthetic. That is the truthful output; normalising it would manufacture
+    structure out of noise.
+    """
+    peak = float(arr.max()) if arr.size else 0.0
+    if not np.isfinite(peak) or peak <= 0:
+        return np.zeros_like(arr, dtype=np.float32)
+    return (arr / peak).astype(np.float32)
+
+
+def compute_cam(model, pixel_values, target_class: int = FAKE_CLASS) -> np.ndarray | None:
+    """A 14x14 relevance map for a still image, normalised to [0, 1].
+
+    Returns None if anything prevents a map being produced. Callers treat that
+    as "no map for this checkpoint", never as an error: a missing overlay is a
+    cosmetic loss, a failed case is not.
+    """
+    rel = _token_relevance(model, pixel_values, target_class)
+    if rel is None:
+        return None
+
+    if rel.size != GRID * GRID:
+        log.warning(f"artifact map: expected {GRID * GRID} patch tokens, "
+                    f"got {rel.size}")
+        return None
+
+    return _normalise(rel.reshape(GRID, GRID))
+
+
+def compute_video_cam(model, pixel_values,
+                      target_class: int = FAKE_CLASS) -> np.ndarray | None:
+    """A (T, 14, 14) relevance cube for a clip, normalised to [0, 1] overall.
+
+    ViViT embeds *tubelets* — a 2x16x16 block of two frames by sixteen pixels
+    square — so its 1568 tokens are 8 temporal segments of a 14x14 spatial
+    grid, not one flat grid. Reshaping to (T, 14, 14) recovers that structure,
+    which is what makes a video map more informative than an image one: it
+    localises in time as well as space, so the report can say which moment of
+    the clip carried the evidence.
+
+    Normalised across the whole cube rather than per segment. Per-segment
+    normalisation would rescale every segment to peak at 1.0, erasing exactly
+    the difference the temporal profile exists to show — a quiet segment would
+    look as incriminating as the decisive one.
+
+    `interpolate_pos_encoding=True` mirrors VideoInferencer._predict_one: the
+    checkpoints run 16 frames against a backbone pretrained on 32, and the
+    positional embeddings are resized to match.
+    """
+    rel = _token_relevance(model, pixel_values, target_class,
+                           forward_kwargs={"interpolate_pos_encoding": True})
+    if rel is None:
+        return None
+
+    per_frame = GRID * GRID
+    if rel.size % per_frame != 0 or rel.size == 0:
+        log.warning(f"artifact map: {rel.size} tokens is not a whole number of "
+                    f"{GRID}x{GRID} segments")
+        return None
+
+    segments = rel.size // per_frame
+    return _normalise(rel.reshape(segments, GRID, GRID))
 
 
 def place_in_frame(cam: np.ndarray, frame_h: int, frame_w: int,
@@ -301,6 +369,118 @@ def render_overlay(base_rgb: np.ndarray, cam: np.ndarray, out_path: str,
     blended = base_rgb.astype(np.float32) * (1.0 - a) + heat * a
     Image.fromarray(blended.clip(0, 255).astype(np.uint8)).save(out_path)
     return out_path
+
+
+def render_video_overlay(frames: np.ndarray, cube: np.ndarray, out_path: str,
+                         columns: int = 4, alpha: float = 0.65,
+                         floor: float = 0.15, label_band: int = 18) -> str:
+    """Contact sheet: each temporal segment's heat over its own frame.
+
+    A single blended image cannot represent a clip — averaging the cube over
+    time would hide the one segment that mattered, which for a face swap is
+    frequently a handful of frames. So each of the T segments is drawn
+    separately, over the frame it actually covers, and laid out in a grid that
+    reads left-to-right in time.
+
+    Each segment spans `tubelet` frames (2 for this backbone); the first is
+    used as its representative. A thin band under each tile carries the
+    segment's share of total relevance, so the strongest moment is findable
+    without comparing colours by eye.
+    """
+    from PIL import Image, ImageDraw
+
+    segments = cube.shape[0]
+    if segments == 0 or frames.size == 0:
+        raise ValueError("nothing to render")
+
+    fh, fw = frames.shape[1:3]
+    per_segment = max(1, len(frames) // segments)
+    profile = temporal_profile(cube)
+
+    columns = max(1, min(columns, segments))
+    rows = (segments + columns - 1) // columns
+    tile_h = fh + label_band
+
+    sheet = Image.new("RGB", (columns * fw, rows * tile_h), (8, 12, 20))
+    draw = ImageDraw.Draw(sheet)
+
+    for t in range(segments):
+        frame = frames[min(t * per_segment, len(frames) - 1)]
+        heat = place_in_frame(cube[t], fh, fw)
+
+        tmp = f"{out_path}.seg{t}.tmp.png"
+        render_overlay(frame, heat, tmp, alpha=alpha, floor=floor)
+        with Image.open(tmp) as tile:
+            tile.load()
+            x, y = (t % columns) * fw, (t // columns) * tile_h
+            sheet.paste(tile, (x, y))
+        Path(tmp).unlink(missing_ok=True)
+
+        share = profile[t] if t < len(profile) else 0.0
+        draw.text((x + 4, y + fh + 4),
+                  f"seg {t + 1}/{segments}   {share * 100:.0f}%",
+                  fill=(148, 163, 184))
+        # Bar the width of this segment's share, so the eye finds the peak
+        # without reading the numbers.
+        draw.rectangle([x + 4, y + fh + label_band - 4,
+                        x + 4 + int((fw - 8) * share), y + fh + label_band - 2],
+                       fill=(239, 68, 68))
+
+    sheet.save(out_path)
+    return out_path
+
+
+def temporal_profile(cube: np.ndarray) -> list[float]:
+    """Each segment's share of the clip's total relevance, summing to 1.
+
+    Intended to answer *when* the model found something: a spike would mean a
+    few frames carry the evidence (a swap, a splice, one edited shot), a flat
+    profile that it is spread across the clip.
+
+    Measured caveat, and it is a significant one. On the clips tested so far
+    the profile comes back very close to uniform — 0.108 to 0.128 against an
+    even share of 0.125 — and a per-segment occlusion test showed the measured
+    impact of removing each segment is equally flat. So this has *not* been
+    demonstrated to discriminate in time. The likely cause is the channel
+    weighting: gradients are averaged over all 1568 tokens, across time as
+    well as space, which washes out temporal contrast before the profile is
+    computed.
+
+    It is kept because the number is honest as a description of the cube, and
+    because `summarise_video` gates every temporal *claim* behind
+    `temporally_localised`, which on this evidence correctly returns False.
+    Treat a True from it as untested rather than proven until a clip with a
+    known localised edit says otherwise. The spatial half of the map is on
+    much firmer ground — see the deletion test in the README.
+    """
+    per_segment = cube.reshape(cube.shape[0], -1).sum(axis=1)
+    total = float(per_segment.sum())
+    if total <= 0:
+        return [0.0] * cube.shape[0]
+    return [round(float(v / total), 4) for v in per_segment]
+
+
+def summarise_video(cube: np.ndarray, top_k: int = 3) -> dict:
+    """Region summary for a clip, plus where in time the evidence sits."""
+    profile = temporal_profile(cube)
+    collapsed = cube.max(axis=0)          # strongest moment per location
+    record = summarise(_normalise(collapsed), top_k=top_k)
+
+    peak = int(np.argmax(profile)) if profile else 0
+    record.update({
+        "segments": int(cube.shape[0]),
+        "temporal_profile": profile,
+        "peak_segment": peak,
+        # Even spread over T segments is 1/T each. A peak carrying more than
+        # twice its even share is a moment worth pointing at; anything less is
+        # a clip whose evidence is genuinely spread out, and saying otherwise
+        # would invent a timestamp.
+        "temporally_localised": bool(
+            profile and cube.shape[0] > 1
+            and profile[peak] > 2.0 / cube.shape[0]
+        ),
+    })
+    return record
 
 
 def summarise(frame_map: np.ndarray, top_k: int = 3) -> dict:

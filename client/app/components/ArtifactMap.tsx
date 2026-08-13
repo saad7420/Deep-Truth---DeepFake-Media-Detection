@@ -42,14 +42,25 @@ export function ArtifactMapPanel({
   const pct =
     typeof map.concentration === "number" ? Math.round(map.concentration * 100) : null;
 
+  const profile = map.temporal_profile ?? [];
+  const isVideo = profile.length > 0;
+  const peak = map.peak_segment ?? 0;
+  const timeLocalised = map.temporally_localised === true;
+
   return (
     <Panel className={cn("overflow-hidden", className)}>
       <PanelHeading
         icon={ScanSearch}
         title="Artifact map"
-        hint="Regions that drove the verdict"
+        hint={
+          isVideo
+            ? `Per-segment heat over the ${map.branch === "face" ? "face crops" : "sampled frames"}`
+            : "Regions that drove the verdict"
+        }
         action={
-          originalUrl ? (
+          // A clip's map is a contact sheet of many frames, so there is no
+          // single "original" to toggle back to.
+          originalUrl && !isVideo ? (
             <button
               type="button"
               onClick={() => setShowOverlay((v) => !v)}
@@ -74,6 +85,66 @@ export function ArtifactMapPanel({
             className="w-full"
           />
         </div>
+
+        {/* ── When, for a clip ────────────────────────────────────────── */}
+        {isVideo && (
+          <div className="mt-3">
+            <div className="mb-1.5 flex items-baseline justify-between">
+              <span className="font-mono text-[10px] uppercase tracking-wider text-slate-500">
+                Relevance over time
+              </span>
+              <span className="font-mono text-[10px] text-slate-500">
+                {profile.length} segments
+              </span>
+            </div>
+
+            {/* Bars share one scale, so a flat clip looks flat. Normalising
+                each bar to its own height would make every clip look like it
+                had a decisive moment. */}
+            <div className="flex h-12 items-end gap-0.5">
+              {profile.map((share, i) => (
+                <div
+                  key={i}
+                  title={`Segment ${i + 1}: ${Math.round(share * 100)}% of total relevance`}
+                  className={cn(
+                    "flex-1 rounded-t-sm transition-colors",
+                    i === peak && timeLocalised
+                      ? "bg-amber-400"
+                      : i === peak
+                        ? "bg-slate-500"
+                        : "bg-slate-700",
+                  )}
+                  style={{
+                    height: `${Math.max(3, (share / Math.max(...profile, 0.0001)) * 100)}%`,
+                  }}
+                />
+              ))}
+            </div>
+
+            <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">
+              {timeLocalised ? (
+                <>
+                  <span className="font-semibold text-amber-300">
+                    Segment {peak + 1} of {profile.length}
+                  </span>{" "}
+                  carries {Math.round((profile[peak] ?? 0) * 100)}% of the total
+                  relevance — the evidence is concentrated in one part of the
+                  clip rather than spread through it.
+                </>
+              ) : (
+                <>
+                  Relevance is spread fairly evenly across the clip (strongest
+                  segment {Math.round((profile[peak] ?? 0) * 100)}%, an even
+                  share would be {Math.round((1 / profile.length) * 100)}%), so
+                  there is no single moment to point at. Note that temporal
+                  discrimination is the weakest part of this method and has not
+                  yet been validated against a clip with a known localised
+                  edit — read the spatial heat, not the timing.
+                </>
+              )}
+            </p>
+          </div>
+        )}
 
         {/* ── What this map does and does not say ─────────────────────── */}
         <div
@@ -101,9 +172,10 @@ export function ArtifactMapPanel({
               </span>{" "}
               Relevance is spread across the frame
               {pct !== null && <> (the strongest tenth holds only {pct}%)</>}, which
-              is what a wholly synthetic image looks like: the signal is texture
-              and frequency across the whole picture rather than one edited
-              region. Read this as attention, not as a marked-up area.
+              is what wholly synthetic {isVideo ? "footage" : "imagery"} looks
+              like: the signal is texture and frequency across the whole
+              {isVideo ? " picture" : " picture"} rather than one edited region.
+              Read this as attention, not as a marked-up area.
             </>
           )}
         </div>

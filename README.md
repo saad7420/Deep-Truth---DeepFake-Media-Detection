@@ -146,6 +146,29 @@ not enough to trace a splice boundary. It also explains the *model*, not the
 image: a checkpoint keying on a JPEG artefact will produce a confident map over
 that artefact.
 
+### Video
+
+Clips get the same treatment, with a temporal axis. ViViT embeds *tubelets* —
+2 frames × 16 × 16 pixels — so its 1568 tokens are 8 temporal segments of a
+14×14 grid rather than one flat grid. The map is rendered as a contact sheet:
+each segment's heat over the frame it covers, laid out left-to-right in time.
+
+The face branch is drawn when it produced maps, because its checkpoints see the
+crop and localise more finely than a whole-frame checkpoint pointing at a
+region that merely contains the face. Branches are never fused — their
+coordinate systems differ, and mixing them would misplace the evidence.
+
+**The temporal half is not validated, and the code says so.** On the clips
+tested the profile comes back near-uniform (0.108–0.128 against an even share
+of 0.125), and a per-segment occlusion test found the measured impact of
+removing each segment equally flat. The likely cause is the channel weighting:
+gradients are averaged over all 1568 tokens, across time as well as space,
+washing out temporal contrast. So `temporally_localised` gates every claim
+about timing and correctly returns False on this evidence, and the UI tells the
+operator to read the spatial heat rather than the timing. The spatial half is on
+much firmer ground — the face contact sheet concentrates on facial features and
+correctly gives 5% to a segment where the crop missed the face.
+
 Costs one backward pass per contributing checkpoint: **18.0s → 33.9s** on CPU
 with warm models, explaining 7 checkpoints — about 1.9×, or 2.3s each. Set
 `DEEPTRUTH_ARTIFACT_MAPS=0` to skip it. The verdict is bit-identical either
