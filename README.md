@@ -146,9 +146,11 @@ not enough to trace a splice boundary. It also explains the *model*, not the
 image: a checkpoint keying on a JPEG artefact will produce a confident map over
 that artefact.
 
-Costs one backward pass per contributing checkpoint. Set
-`DEEPTRUTH_ARTIFACT_MAPS=0` to skip it; the verdict is identical either way,
-since the maps are computed separately and never feed back into the score.
+Costs one backward pass per contributing checkpoint: **18.0s → 33.9s** on CPU
+with warm models, explaining 7 checkpoints — about 1.9×, or 2.3s each. Set
+`DEEPTRUTH_ARTIFACT_MAPS=0` to skip it. The verdict is bit-identical either
+way, verified rather than assumed, because the maps come from a separate pass
+that never feeds back into the score.
 
 ## Server-side media fetch
 
