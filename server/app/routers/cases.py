@@ -14,16 +14,19 @@ import os
 import uuid
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlsplit
 
 import aiosqlite
 from fastapi import (
     APIRouter,
+    Depends,
     File,
     Form,
     HTTPException,
     Query,
     UploadFile,
 )
+from starlette.concurrency import run_in_threadpool
 
 from app.database import get_db
 from app.models import (
@@ -35,6 +38,9 @@ from app.models import (
 from app.queue import cache, state
 from app.queue.redis_client import BrokerUnavailable, require as require_broker
 from app.queue.tasks import MAX_ATTEMPTS, analyze_case
+from app.security import ratelimit
+from app.security.media import validate_signature
+from app.security.urlfetch import UrlRejected, validate_url
 from app.services.analyser import validate_file
 
 router = APIRouter()
@@ -127,6 +133,27 @@ async def _replay_cached(case_db_id: str, payload: dict) -> None:
             """,
             (payload["status"], payload["risk"], payload["likelihood"], case_db_id),
         )
+
+        # A URL submission answered from cache downloaded nothing, so it has no
+        # evidence file and the report page would render an empty preview.
+        # Point it at the file the originating case stored — identical bytes by
+        # definition, since the content hash is what matched.
+        #
+        # Only when this case has none of its own: an uploaded file was already
+        # written to disk, and overwriting its URL would orphan that file.
+        source_file = payload.get("sourceFile")
+        if source_file and source_file.get("url"):
+            await db.execute(
+                """
+                UPDATE cases
+                   SET file_name = COALESCE(file_name, ?),
+                       file_url  = ?,
+                       file_size = ?
+                 WHERE id = ? AND file_url IS NULL
+                """,
+                (source_file.get("name"), source_file["url"],
+                 source_file.get("size"), case_db_id),
+            )
         for r in rows:
             await db.execute(
                 """
@@ -147,7 +174,8 @@ async def _replay_cached(case_db_id: str, payload: dict) -> None:
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
-@router.get("/cases", response_model=CaseListResponse)
+@router.get("/cases", response_model=CaseListResponse,
+            dependencies=[Depends(ratelimit.read)])
 async def list_cases(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -201,7 +229,8 @@ async def list_cases(
     return {"cases": cases, "total": total, "page": page, "page_size": page_size}
 
 
-@router.post("/cases", response_model=CaseResponse, status_code=201)
+@router.post("/cases", response_model=CaseResponse, status_code=201,
+             dependencies=[Depends(ratelimit.upload)])
 async def create_case(
     title: str = Form(...),
     media_type: str = Form(...),
@@ -212,46 +241,107 @@ async def create_case(
         description="Page-media URL this file was captured from. Used as a "
                     "secondary cache key by the browser extension.",
     ),
-    file: UploadFile = File(...),
+    media_url: Optional[str] = Form(
+        None,
+        description="Fetch the media from this URL server-side instead of "
+                    "uploading it. Mutually exclusive with `file`.",
+    ),
+    file: Optional[UploadFile] = File(None),
 ):
     """
     Create a new forensic case.
-    Accepts multipart/form-data with the evidence file.
 
-    Three outcomes, all returning 201 with the case:
+    Two ways to submit, exactly one per request:
+
+      * `file`       multipart upload of the bytes
+      * `media_url`  the server downloads it instead (Module 4 FE-1), which
+                     saves the caller uploading media it already has to
+                     download, and reaches media a page's CSP would block
+
+    Outcomes, all 201 with the case except the last:
       * cache hit  — the verdict is already attached, status is terminal
       * queued     — a Celery job was published, status is `processing`
+      * 400/422    — the request or the media is unusable
       * 503        — the broker is unreachable and nothing was accepted
     """
     # ── Validate ──────────────────────────────────────────────────────────────
     if media_type not in ("image", "video", "audio"):
         raise HTTPException(400, "media_type must be one of: image, video, audio")
 
-    content = await file.read()
-    error = validate_file(media_type, file.content_type or "", len(content))
-    if error:
-        raise HTTPException(422, error)
+    has_file = file is not None and (file.filename or "") != ""
+    if has_file == bool(media_url):
+        raise HTTPException(
+            400,
+            "Provide exactly one of `file` (upload the bytes) or `media_url` "
+            "(have the server fetch them).",
+        )
 
     # ── Broker check, before anything is written ─────────────────────────────
-    # Refusing here rather than after the insert means a rejected upload
+    # Refusing here rather than after the insert means a rejected request
     # leaves no orphaned 'processing' case that nothing will ever pick up.
     # The cache read below needs Redis anyway, so this single check covers
-    # both paths.
+    # every path.
     try:
         require_broker()
     except BrokerUnavailable as exc:
         raise HTTPException(503, str(exc)) from exc
 
-    # ── Cache lookup, before the file is even stored ─────────────────────────
-    sha = cache.content_hash(content)
-    cached = cache.lookup(media_type, sha)
+    content: bytes | None = None
+    sha: str = ""
+    file_name: str | None = None
+    file_url: str | None = None
+    file_size: int | None = None
+    file_path: Path | None = None
 
-    # ── Persist file ──────────────────────────────────────────────────────────
-    ext = Path(file.filename or "upload").suffix or ".bin"
-    safe_name = f"{uuid.uuid4().hex}{ext}"
-    file_path = UPLOAD_DIR / safe_name
-    file_path.write_bytes(content)
-    file_url = f"{BASE_URL}/uploads/{safe_name}"
+    if has_file:
+        # ── Uploaded bytes ───────────────────────────────────────────────────
+        content = await file.read()
+        error = validate_file(media_type, file.content_type or "", len(content))
+        if error:
+            raise HTTPException(422, error)
+
+        # The check above tested the Content-Type the *caller* sent, which is
+        # just a string they chose. This one tests the bytes. Both run: the
+        # header check gives the better message for an honest client-side
+        # mistake, the signature check is what actually keeps undecodable
+        # content off a worker.
+        error = validate_signature(media_type, content)
+        if error:
+            raise HTTPException(422, error)
+
+        sha = cache.content_hash(content)
+        cached = cache.lookup(media_type, sha)
+
+        ext = Path(file.filename or "upload").suffix or ".bin"
+        safe_name = f"{uuid.uuid4().hex}{ext}"
+        file_path = UPLOAD_DIR / safe_name
+        file_path.write_bytes(content)
+        file_name = file.filename
+        file_url = f"{BASE_URL}/uploads/{safe_name}"
+        file_size = len(content)
+
+    else:
+        # ── Server-side fetch ────────────────────────────────────────────────
+        # Only the cheap, certain checks run here — scheme, host, and whether
+        # the address is one this server will connect to at all. They cost a
+        # DNS lookup and reject the whole class of malformed or hostile URLs
+        # before a case row exists. The download itself is the worker's job.
+        #
+        # Note this validation is repeated inside the worker, per redirect hop.
+        # That is not belt-and-braces: DNS can return a different answer by
+        # then, which is exactly how a rebinding attack works.
+        try:
+            media_url = await run_in_threadpool(validate_url, media_url)
+        except UrlRejected as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+        # A URL we have fetched before resolves to a content hash, and from
+        # there to a verdict — so a repeat sighting never downloads anything.
+        sha, cached = cache.lookup_by_url(media_type, media_url)
+        sha = sha or ""
+
+        # Provisional; the worker overwrites all three once the bytes land.
+        file_name = Path(urlsplit(media_url).path).name or "download"
 
     # ── Write case row ────────────────────────────────────────────────────────
     case_id = f"CASE-{uuid.uuid4().hex[:8].upper()}"
@@ -268,7 +358,7 @@ async def create_case(
             VALUES (?, ?, ?, ?, 'processing', 0, 0, ?, ?, ?, ?, ?)
             """,
             (db_id, case_id, title, media_type,
-             file.filename, file_url, len(content), user_id, notes),
+             file_name, file_url, file_size, user_id, notes),
         )
         await db.commit()
     finally:
@@ -276,19 +366,22 @@ async def create_case(
 
     # Remember which URL these bytes came from even when the analysis has yet
     # to run, so the extension's next visit to the same page resolves.
-    if source_url:
+    if source_url and sha:
         cache.remember_url(source_url, sha)
 
     # ── Hit: replay and return, no worker involved ───────────────────────────
     if cached:
         await _replay_cached(db_id, cached)
         state.mark_cached(db_id, case_id=case_id, media_type=media_type,
-                          content_hash=sha, source_url=source_url or "")
+                          content_hash=sha, source_url=source_url or media_url or "")
     else:
         # ── Miss: hand it to a worker ────────────────────────────────────────
         try:
-            async_result = analyze_case.delay(db_id, media_type, str(file_path),
-                                              sha, source_url or "")
+            async_result = analyze_case.delay(
+                db_id, media_type,
+                str(file_path) if file_path else "",
+                sha, source_url or "", media_url or "",
+            )
         except Exception as exc:  # noqa: BLE001 — kombu raises its own family
             # Redis answered `ping` a moment ago but would not take the
             # message. The case row already exists, so mark it failed rather
@@ -303,7 +396,8 @@ async def create_case(
         state.mark_queued(db_id, case_id=case_id, media_type=media_type,
                           celery_task_id=async_result.id,
                           max_attempts=MAX_ATTEMPTS,
-                          content_hash=sha, source_url=source_url or "")
+                          content_hash=sha,
+                          source_url=source_url or media_url or "")
 
     # Re-read so the response carries whatever the cache replay just wrote.
     db = await get_db()
@@ -329,7 +423,8 @@ async def _mark_case_failed(case_db_id: str) -> None:
         await db.close()
 
 
-@router.get("/cases/{case_id}", response_model=CaseResponse)
+@router.get("/cases/{case_id}", response_model=CaseResponse,
+            dependencies=[Depends(ratelimit.read)])
 async def get_case(case_id: str):
     """Fetch a single case including its analysis results."""
     db = await get_db()
@@ -346,7 +441,8 @@ async def get_case(case_id: str):
     return _build_response(row_dict, results, state.get_job(row_dict["id"]))
 
 
-@router.patch("/cases/{case_id}", response_model=CaseResponse)
+@router.patch("/cases/{case_id}", response_model=CaseResponse,
+              dependencies=[Depends(ratelimit.write)])
 async def update_case(case_id: str, body: CaseUpdate):
     """Partially update a case (title, status, scores, notes)."""
     db = await get_db()
@@ -386,7 +482,8 @@ async def update_case(case_id: str, body: CaseUpdate):
     return _build_response(row, results, state.get_job(internal_id))
 
 
-@router.delete("/cases/{case_id}", status_code=204)
+@router.delete("/cases/{case_id}", status_code=204,
+               dependencies=[Depends(ratelimit.write)])
 async def delete_case(case_id: str):
     """Permanently delete a case and its analysis results."""
     db = await get_db()
@@ -396,20 +493,33 @@ async def delete_case(case_id: str):
         if row is None:
             raise HTTPException(404, f"Case '{case_id}' not found.")
 
-        # Remove uploaded file
-        if row["file_url"]:
-            fname = row["file_url"].split("/uploads/")[-1]
-            fpath = UPLOAD_DIR / fname
-            if fpath.exists():
-                fpath.unlink(missing_ok=True)
-
+        # Delete the case first, so the reference count below sees the world
+        # as it will be once this call returns.
         await db.execute("DELETE FROM cases WHERE id = ?", (row["id"],))
         await db.commit()
+
+        # Remove the evidence file — but only if no other case still points at
+        # it. Cases answered from cache share the originating case's file
+        # rather than re-downloading identical bytes, so deleting one case
+        # would otherwise blank the evidence panel on every case that shares
+        # it. Counting first makes the delete safe without tracking ownership.
+        if row["file_url"]:
+            async with db.execute(
+                "SELECT COUNT(*) FROM cases WHERE file_url = ?", (row["file_url"],)
+            ) as cur:
+                still_referenced = (await cur.fetchone())[0]
+
+            if still_referenced == 0:
+                fname = row["file_url"].split("/uploads/")[-1]
+                fpath = UPLOAD_DIR / fname
+                if fpath.exists():
+                    fpath.unlink(missing_ok=True)
     finally:
         await db.close()
 
 
-@router.get("/stats", response_model=DashboardStats)
+@router.get("/stats", response_model=DashboardStats,
+            dependencies=[Depends(ratelimit.read)])
 async def get_stats():
     """Aggregate dashboard statistics."""
     db = await get_db()

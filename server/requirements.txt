@@ -46,6 +46,13 @@ python-dotenv
 celery>=5.4
 redis>=5.0
 
+# Server-side media download (M4 FE-1). httpx rather than requests because the
+# streaming API makes it straightforward to abort a transfer mid-body once it
+# passes the size cap, and because redirects can be disabled and followed
+# manually — app/security/urlfetch.py re-validates the destination at every hop
+# to stop a public URL redirecting onto an internal address.
+httpx>=0.27
+
 # ── Audio (M6, still a stub engine) ───────────────────────────────────────────
 # Needed only once deeptruth_pipeline/inferencers/audio.py replaces
 # AudioFakeNetStub; harmless to install ahead of that.

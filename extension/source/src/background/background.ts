@@ -26,9 +26,11 @@ import {
   ApiError,
   buildTitle,
   createCase,
+  createCaseFromUrl,
   explain,
   fetchMedia,
   getCase,
+  isBrowserOnlyUrl,
   isExperimental,
   isSettled,
   lookupCachedUrl,
@@ -235,17 +237,40 @@ async function startAnalysis(payload: StartAnalysisPayload): Promise<StartAnalys
       return { ok: true, caseId: cached.sourceCaseId };
     }
 
-    const { blob, contentType } = await fetchMedia(mediaUrl, mediaType);
-    const c = await createCase(apiUrl, {
-      blob,
-      contentType,
-      mediaType,
-      title: buildTitle(pageUrl, mediaUrl),
-      notes: `Captured by the Deep Truth extension from ${pageUrl}`,
-      // Teaches the server which URL serves these bytes, so the pre-check
-      // above can short-circuit the next encounter.
-      sourceUrl: mediaUrl,
-    });
+    const title = buildTitle(pageUrl, mediaUrl);
+    const notes = `Captured by the Deep Truth extension from ${pageUrl}`;
+
+    // ── Preferred: let the server fetch it (M4 FE-1) ─────────────────────
+    // Saves the user downloading the media only to upload it again. Skipped
+    // outright for blob:/data: URLs, which name nothing outside this page.
+    let c: CaseResponse | null = null;
+    if (!isBrowserOnlyUrl(mediaUrl)) {
+      try {
+        c = await createCaseFromUrl(apiUrl, { mediaUrl, mediaType, title, notes });
+      } catch (err) {
+        // Fall through to uploading the bytes ourselves. The server refusing
+        // a URL says nothing about whether *we* can read it — media behind a
+        // login is the common case, and the browser holds the session the
+        // server does not.
+        const why = err instanceof Error ? err.message : 'unknown error';
+        console.info('[Deep-Truth] server-side fetch declined, uploading instead:', why);
+      }
+    }
+
+    // ── Fallback: download here and upload the bytes ─────────────────────
+    if (!c) {
+      const { blob, contentType } = await fetchMedia(mediaUrl, mediaType);
+      c = await createCase(apiUrl, {
+        blob,
+        contentType,
+        mediaType,
+        title,
+        notes,
+        // Teaches the server which URL serves these bytes, so the pre-check
+        // above can short-circuit the next encounter.
+        sourceUrl: mediaUrl,
+      });
+    }
 
     const base: ScanRecord = {
       caseId: c.caseId,

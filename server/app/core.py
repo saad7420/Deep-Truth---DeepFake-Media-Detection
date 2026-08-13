@@ -67,6 +67,15 @@ def create_app() -> FastAPI:
     os.makedirs(upload_dir, exist_ok=True)
     application.mount("/uploads", StaticFiles(directory=upload_dir), name="uploads")
 
+    # Rendered artifact maps (M7 FE-3). Its own mount rather than a
+    # subdirectory of uploads/: these are derived files, regenerable from the
+    # preprocessing cache, and safe to delete wholesale — which is emphatically
+    # not true of the evidence a case is built on.
+    artifact_dir = os.getenv("ARTIFACT_DIR", "artifacts")
+    os.makedirs(artifact_dir, exist_ok=True)
+    application.mount("/artifacts", StaticFiles(directory=artifact_dir),
+                      name="artifacts")
+
     # ── Routers ───────────────────────────────────────────────────────────────
     application.include_router(health.router, prefix="/api", tags=["health"])
     application.include_router(cases.router, prefix="/api", tags=["cases"])

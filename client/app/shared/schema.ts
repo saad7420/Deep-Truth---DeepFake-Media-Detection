@@ -46,6 +46,36 @@ export const AnalysisResultSchema = z.object({
 /** Shape of `details` on a tier-"summary" row, as written by
     analyser._engine_result_row. Every field is optional because which keys
     are present depends on which engine ran. */
+/**
+ * Where the ensemble found its evidence (M7 FE-3).
+ *
+ * `localised` is the field that governs how this may be presented. A Grad-CAM
+ * map always produces *something*; it is only a claim about a region when the
+ * relevance actually concentrates. When it does not — a globally synthetic
+ * image, where the giveaway is texture across the whole frame — the map must
+ * be described as a distribution of attention, not as "the manipulated area".
+ */
+export const ArtifactMapSchema = z.object({
+  url: z.string(),
+  method: z.string().optional(),
+  grid: z.number().optional(),
+  /** Share of total relevance held by the strongest 10% of cells. */
+  concentration: z.number().optional(),
+  localised: z.boolean().optional(),
+  contributors: z.array(z.string()).default([]),
+  regions: z
+    .array(
+      z.object({
+        x: z.number(),
+        y: z.number(),
+        w: z.number(),
+        h: z.number(),
+        relevance: z.number(),
+      }),
+    )
+    .default([]),
+});
+
 export const SummaryDetailsSchema = z.object({
   tier: z.literal("summary").optional(),
   modality: z.string().optional(),
@@ -56,6 +86,7 @@ export const SummaryDetailsSchema = z.object({
   rationale: z.string().optional(),
   error: z.string().optional(),
   note: z.string().optional(),
+  artifact_map: ArtifactMapSchema.nullable().optional(),
 });
 
 /* ── Orchestration state ─────────────────────────────────────────────────────
@@ -185,6 +216,7 @@ export type Case = z.infer<typeof CaseSchema>;
 export type CaseListResponse = z.infer<typeof CaseListResponseSchema>;
 export type DashboardStats = z.infer<typeof DashboardStatsSchema>;
 export type HealthResponse = z.infer<typeof HealthResponseSchema>;
+export type ArtifactMap = z.infer<typeof ArtifactMapSchema>;
 export type JobState = z.infer<typeof JobStateSchema>;
 export type JobStateName = JobState["state"];
 export type QueueOverview = z.infer<typeof QueueOverviewSchema>;

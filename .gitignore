@@ -29,6 +29,7 @@ server/uploads/*
 !server/uploads/.gitkeep
 server/_dtp_cache/
 server/_dtp_logs/
+server/artifacts/
 preprocessed/
 *.npy
 

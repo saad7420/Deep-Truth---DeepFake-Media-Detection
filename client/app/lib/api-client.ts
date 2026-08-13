@@ -51,13 +51,25 @@ export class ApiError extends Error {
     this.detail = detail;
   }
 
-  /** True when the server rejected the file itself (type or size). */
+  /** True when the server rejected the file itself (type, size, or contents). */
   get isValidation() {
     return this.status === 422 || this.status === 400;
   }
 
   get isNotFound() {
     return this.status === 404;
+  }
+
+  /**
+   * True when the caller is being rate limited.
+   *
+   * Worth distinguishing from other errors because the correct response is the
+   * opposite of the usual one: a 429 must not be retried on the spot, and
+   * several console panels poll on intervals that would otherwise keep the
+   * bucket permanently empty.
+   */
+  get isRateLimited() {
+    return this.status === 429;
   }
 }
 
