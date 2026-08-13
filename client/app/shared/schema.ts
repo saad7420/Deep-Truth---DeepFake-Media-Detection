@@ -74,6 +74,25 @@ export const ArtifactMapSchema = z.object({
       }),
     )
     .default([]),
+
+  /* ── Video only ──────────────────────────────────────────────────────────
+     A clip's map is a cube: ViViT embeds tubelets, so relevance is localised
+     in time as well as space. These fields are absent for stills. */
+
+  /** Number of temporal segments the clip was divided into. */
+  segments: z.number().optional(),
+  /** Each segment's share of total relevance; sums to 1. */
+  temporal_profile: z.array(z.number()).optional(),
+  /** Index of the strongest segment. */
+  peak_segment: z.number().optional(),
+  /**
+   * True when one moment carries materially more than an even share. False
+   * means the evidence is spread across the clip, and naming a timestamp
+   * would be inventing one.
+   */
+  temporally_localised: z.boolean().optional(),
+  /** Which preprocessing branch was drawn: "face" crops or "full" frames. */
+  branch: z.string().optional(),
 });
 
 export const SummaryDetailsSchema = z.object({

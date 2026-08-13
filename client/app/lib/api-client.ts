@@ -276,6 +276,50 @@ export const healthApi = {
   },
 };
 
+/* ── Report download ─────────────────────────────────────────────────────── */
+
+/** Direct URL of a case's PDF. Useful for a link; prefer `downloadCaseReport`. */
+export function reportPdfUrl(caseId: string): string {
+  return `${API_BASE}/cases/${encodeURIComponent(caseId)}/report.pdf`;
+}
+
+/**
+ * Download a case's forensic report.
+ *
+ * Fetched as a blob rather than pointed at with `<a download>`, because the
+ * endpoint can legitimately refuse: 409 while a case is still being analysed,
+ * 404 for a deleted one, 429 under rate limiting. A plain link navigates the
+ * browser to whichever JSON error body comes back, stranding the operator on a
+ * page of raw text. Fetching keeps the failure in the UI where it can be
+ * explained.
+ */
+export async function downloadCaseReport(caseId: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(reportPdfUrl(caseId), { headers: { Accept: "application/pdf" } });
+  } catch {
+    throw new ApiError(0, `Can't reach the analysis server at ${API_ORIGIN}.`);
+  }
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new ApiError(res.status, readDetail(body, `Report failed (${res.status})`), body);
+  }
+
+  const blob = await res.blob();
+  const href = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = href;
+  a.download = `deeptruth-${caseId}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Revoking immediately can cancel the download in some browsers; one tick
+  // is enough for the click to have been handed off.
+  setTimeout(() => URL.revokeObjectURL(href), 1000);
+}
+
+
 /* ── Queue ───────────────────────────────────────────────────────────────── */
 
 export const queueApi = {

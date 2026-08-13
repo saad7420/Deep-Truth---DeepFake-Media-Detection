@@ -42,6 +42,7 @@ import logging
 from pathlib import Path
 
 from app._dtp import get_pipeline
+from ..artifacts import publish as publish_artifact_map
 from ..base import Engine, EngineInput, EngineResult, neutral_result
 
 log = logging.getLogger(__name__)
@@ -81,10 +82,14 @@ class VisualForensicsEngine(Engine):
                 "face_avg":         ir.get("face_avg"),
                 "genvideo_score":   ir.get("genvideo_score"),
                 "n_face_detected":  ir.get("n_face_detected"),
-                # GradCAM heatmap not yet implemented — evidence slot reserved
-                # for it (report FR7.3). Add it here once built, without
-                # changing this engine's return shape.
-                "heatmap_path": None,
+                # Carried through so the exported report can state the
+                # decision threshold; a verdict without it is unreproducible.
+                "threshold":        ir.get("threshold"),
+                # M7 FE-3. A clip's map is a cube, not a grid — ViViT embeds
+                # tubelets, so the evidence is localised in time as well as
+                # space, and the record carries a per-segment profile
+                # alongside the rendered contact sheet.
+                "artifact_map":     publish_artifact_map(ir.get("artifact_map")),
             },
             model_version="vivit-lora-ensemble",
         )
