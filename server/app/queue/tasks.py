@@ -160,6 +160,31 @@ def _record_downloaded_file(case_db_id: str, *, file_name: str, file_url: str,
         conn.close()
 
 
+def _case_file_ref(case_db_id: str) -> dict | None:
+    """The case's stored evidence file, for the cache payload.
+
+    Cached alongside the verdict so a future cache hit — which downloads
+    nothing — can still show the media. See cache.build_payload.
+    """
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT file_name, file_url, file_size FROM cases WHERE id = ?",
+            (case_db_id,),
+        ).fetchone()
+        if row is None or not row["file_url"]:
+            return None
+        return {
+            "name": row["file_name"],
+            "url": row["file_url"],
+            "size": row["file_size"],
+        }
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+
+
 def _public_case_id(case_db_id: str) -> str:
     """The CASE-XXXXXXXX id for a row id, or "" if the row is gone.
 
@@ -326,7 +351,8 @@ def analyze_case(self: Task, case_db_id: str, media_type: str, file_path: str,
             cache.build_payload(media_type=media_type, risk=risk,
                                 likelihood=likelihood, status=status,
                                 rows=rows, source_case_id=case_db_id,
-                                source_case_ref=_public_case_id(case_db_id)),
+                                source_case_ref=_public_case_id(case_db_id),
+                                source_file=_case_file_ref(case_db_id)),
             # `source_url` is the URL an uploaded file came from; `media_url`
             # is the URL the server fetched. Either identifies where these
             # bytes live, and only one is ever set.

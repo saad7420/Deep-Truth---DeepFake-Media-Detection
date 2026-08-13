@@ -133,6 +133,27 @@ async def _replay_cached(case_db_id: str, payload: dict) -> None:
             """,
             (payload["status"], payload["risk"], payload["likelihood"], case_db_id),
         )
+
+        # A URL submission answered from cache downloaded nothing, so it has no
+        # evidence file and the report page would render an empty preview.
+        # Point it at the file the originating case stored — identical bytes by
+        # definition, since the content hash is what matched.
+        #
+        # Only when this case has none of its own: an uploaded file was already
+        # written to disk, and overwriting its URL would orphan that file.
+        source_file = payload.get("sourceFile")
+        if source_file and source_file.get("url"):
+            await db.execute(
+                """
+                UPDATE cases
+                   SET file_name = COALESCE(file_name, ?),
+                       file_url  = ?,
+                       file_size = ?
+                 WHERE id = ? AND file_url IS NULL
+                """,
+                (source_file.get("name"), source_file["url"],
+                 source_file.get("size"), case_db_id),
+            )
         for r in rows:
             await db.execute(
                 """
@@ -472,15 +493,27 @@ async def delete_case(case_id: str):
         if row is None:
             raise HTTPException(404, f"Case '{case_id}' not found.")
 
-        # Remove uploaded file
-        if row["file_url"]:
-            fname = row["file_url"].split("/uploads/")[-1]
-            fpath = UPLOAD_DIR / fname
-            if fpath.exists():
-                fpath.unlink(missing_ok=True)
-
+        # Delete the case first, so the reference count below sees the world
+        # as it will be once this call returns.
         await db.execute("DELETE FROM cases WHERE id = ?", (row["id"],))
         await db.commit()
+
+        # Remove the evidence file — but only if no other case still points at
+        # it. Cases answered from cache share the originating case's file
+        # rather than re-downloading identical bytes, so deleting one case
+        # would otherwise blank the evidence panel on every case that shares
+        # it. Counting first makes the delete safe without tracking ownership.
+        if row["file_url"]:
+            async with db.execute(
+                "SELECT COUNT(*) FROM cases WHERE file_url = ?", (row["file_url"],)
+            ) as cur:
+                still_referenced = (await cur.fetchone())[0]
+
+            if still_referenced == 0:
+                fname = row["file_url"].split("/uploads/")[-1]
+                fpath = UPLOAD_DIR / fname
+                if fpath.exists():
+                    fpath.unlink(missing_ok=True)
     finally:
         await db.close()
 

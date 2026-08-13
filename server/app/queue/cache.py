@@ -126,7 +126,8 @@ def _url_key(normalised: str) -> str:
 
 def build_payload(*, media_type: str, risk: float, likelihood: float,
                   status: str, rows: list[dict], source_case_id: str,
-                  source_case_ref: str = "") -> dict:
+                  source_case_ref: str = "",
+                  source_file: dict | None = None) -> dict:
     """Freeze an analysis outcome into something replayable.
 
     `id` and `case_id` are stripped from every row: they belong to the case
@@ -139,6 +140,13 @@ def build_payload(*, media_type: str, risk: float, likelihood: float,
     in the database. `sourceCaseRef` is the public CASE-XXXXXXXX id, and is
     the only one a client can actually navigate to, which is what lets the
     extension link a cache hit back to the case that produced the verdict.
+
+    `source_file` carries the originating case's stored evidence file
+    ({name, url, size}). A case answered from cache never downloads anything,
+    so without this it has a verdict and no media, and the report page renders
+    a blank evidence panel. The replay points the new case at the file the
+    first case already stored — the bytes are identical by definition, since
+    the content hash is what matched.
     """
     return {
         "mediaType": media_type,
@@ -156,6 +164,7 @@ def build_payload(*, media_type: str, risk: float, likelihood: float,
         ],
         "sourceCaseId": source_case_id,
         "sourceCaseRef": source_case_ref,
+        "sourceFile": source_file or None,
         "computedAt": time.time(),
         "version": CACHE_VERSION,
     }
