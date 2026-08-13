@@ -58,3 +58,11 @@ httpx>=0.27
 # AudioFakeNetStub; harmless to install ahead of that.
 soundfile>=0.12.1
 scipy>=1.11
+
+# ── Forensic report export (M10 FE-3) ─────────────────────────────────────────
+# Server-side PDF. ReportLab rather than a headless browser (which would mean
+# shipping ~300MB of Chromium to render a page the server must also be able to
+# reach) or a client-side canvas capture (which rasterises everything and loses
+# selectable text — most of the point for a legal or journalistic document).
+# Pure Python, no system libraries, unlike WeasyPrint's pango/cairo dependency.
+reportlab>=4.0

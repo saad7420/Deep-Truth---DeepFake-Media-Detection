@@ -96,6 +96,31 @@ invalidation is by version: bump `DEEPTRUTH_CACHE_VERSION` and every entry is
 retired at once. Zero-confidence results are never cached — freezing "we could
 not tell" as a file's permanent answer is worse than recomputing it.
 
+## Forensic reports
+
+`GET /api/cases/{case_id}/report.pdf` returns a file. The console's "Download
+PDF" is one click — no print dialog, no choosing a destination, and nothing
+that needs a human with a mouse, so a report can be attached, emailed or
+archived by something else.
+
+Rendered server-side with ReportLab. Not a headless browser, which would mean
+shipping ~300 MB of Chromium to render a page the server also has to be able to
+reach; and not a client-side canvas capture, which rasterises everything and
+loses selectable text — most of the point for a document meant for journalism
+or legal use.
+
+Three pages: verdict and rationale, the evidence image and its artifact map,
+the full per-checkpoint breakdown, then chain of custody (including the content
+SHA-256 and which worker ran it) and the technical parameters. It ends with the
+limitations — that *authentic* means no evidence was found rather than proof
+none exists, that *inconclusive* is not a finding either way, and that heavy
+recompression degrades detection. A forensic document that overstates its own
+certainty is worse than no document.
+
+The artifact map is embedded with the same `localised` caveat the console
+shows, so a diffuse map is never printed under a heading implying a specific
+region.
+
 ## Artifact maps
 
 A score is not evidence. "84% synthetic" says what the model concluded, not

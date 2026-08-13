@@ -24,6 +24,7 @@ from fastapi import (
     Form,
     HTTPException,
     Query,
+    Response,
     UploadFile,
 )
 from starlette.concurrency import run_in_threadpool
@@ -42,6 +43,7 @@ from app.security import ratelimit
 from app.security.media import validate_signature
 from app.security.urlfetch import UrlRejected, validate_url
 from app.services.analyser import validate_file
+from app.services.report_pdf import build_report
 
 router = APIRouter()
 
@@ -439,6 +441,56 @@ async def get_case(case_id: str):
         await db.close()
 
     return _build_response(row_dict, results, state.get_job(row_dict["id"]))
+
+
+@router.get("/cases/{case_id}/report.pdf",
+            dependencies=[Depends(ratelimit.read)])
+async def case_report_pdf(case_id: str):
+    """The case as a downloadable PDF (M10 FE-3).
+
+    A real file rather than the browser's print dialog, so a report can be
+    attached, emailed or archived by something other than a person with a
+    mouse. Rendering runs in a thread — ReportLab is synchronous and a report
+    with embedded imagery takes long enough to matter on the event loop.
+    """
+    db = await get_db()
+    try:
+        async with db.execute("SELECT * FROM cases WHERE case_id = ?", (case_id,)) as cur:
+            row = await cur.fetchone()
+        if row is None:
+            raise HTTPException(404, f"Case '{case_id}' not found.")
+        case = _row_to_dict(row)
+        results = await _fetch_analysis(db, case["id"])
+    finally:
+        await db.close()
+
+    if case["status"] == "processing":
+        raise HTTPException(
+            409,
+            "This case is still being analysed. A report generated now would "
+            "record no findings; wait for it to settle and try again.",
+        )
+
+    try:
+        pdf = await run_in_threadpool(
+            build_report, case, results, state.get_job(case["id"])
+        )
+    except Exception as exc:  # noqa: BLE001 — report layout must not 500 silently
+        raise HTTPException(
+            500, f"Could not render the report: {exc}"
+        ) from exc
+
+    filename = f"deeptruth-{case_id}.pdf"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            # `attachment` is what makes this one click: the browser saves it
+            # instead of opening a viewer the operator then has to save from.
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(pdf)),
+        },
+    )
 
 
 @router.patch("/cases/{case_id}", response_model=CaseResponse,

@@ -17,12 +17,14 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Printer, Shield } from "lucide-react";
+import { ArrowLeft, Download, Loader2, Printer, Shield } from "lucide-react";
 
+import { ArtifactMapPanel } from "@/app/components/ArtifactMap";
 import { ErrorState, Spinner } from "@/app/components/Primitives";
 import { Button } from "@/app/components/ui/button";
+import { useToast } from "@/app/hooks/use-toast";
 import { useCase } from "@/app/hooks/use-cases";
-import { formatBytes } from "@/app/lib/api-client";
+import { downloadCaseReport, formatBytes, resolveMediaUrl } from "@/app/lib/api-client";
 import { cn } from "@/app/lib/utils";
 import { VERDICT, riskTone } from "@/app/shared/schema";
 import { engineNameFor, explainEvidence, readAnalysis } from "@/app/lib/analysis";
@@ -32,6 +34,23 @@ export default function ReportPage() {
   const caseId = params?.case_id;
   const { data: c, isLoading, isError, error } = useCase(caseId);
   const [digest, setDigest] = useState<string>("");
+  const [downloading, setDownloading] = useState(false);
+  const { toast } = useToast();
+
+  async function downloadReport(id: string) {
+    setDownloading(true);
+    try {
+      await downloadCaseReport(id);
+    } catch (err) {
+      toast({
+        title: "Couldn't build the report",
+        description: err instanceof Error ? err.message : "Unknown error.",
+        variant: "destructive",
+      });
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   const fingerprintSource = useMemo(() => {
     if (!c) return "";
@@ -83,13 +102,34 @@ export default function ReportPage() {
               Back to case
             </Button>
           </Link>
-          <Button
-            onClick={() => window.print()}
-            className="glow-brand bg-indigo-600 text-white hover:bg-indigo-500"
-          >
-            <Printer className="mr-2 h-4 w-4" />
-            Print or save as PDF
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* Print stays, because a browser's print dialog is still the
+                fastest route to paper and to an annotated copy. But the
+                default is now a real file: the server renders it, so a
+                report can be attached or archived without a person driving
+                a dialog. */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => window.print()}
+              className="text-slate-400 hover:text-white"
+            >
+              <Printer className="mr-1.5 h-4 w-4" />
+              Print
+            </Button>
+            <Button
+              onClick={() => downloadReport(c.caseId)}
+              disabled={downloading}
+              className="glow-brand bg-indigo-600 text-white hover:bg-indigo-500"
+            >
+              {downloading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="mr-2 h-4 w-4" />
+              )}
+              {downloading ? "Preparing…" : "Download PDF"}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -168,6 +208,15 @@ export default function ReportPage() {
             <Field label="Analysis completed" value={fmt(c.updatedAt)} />
             <Field label="Submitted by" value={c.userId ?? "Unattributed"} />
           </dl>
+
+          {/* The map belongs in the exported document, not only on the console
+              screen. Without it the report handed to a journalist or a lawyer
+              carries the score but none of the visual evidence behind it. */}
+          <ArtifactMapPanel
+            map={summary?.evidence.artifact_map}
+            originalUrl={resolveMediaUrl(c.fileUrl)}
+            className="mt-6"
+          />
         </Section>
 
         {/* ── Engine result ───────────────────────────────────────────────── */}

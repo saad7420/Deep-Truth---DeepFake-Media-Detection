@@ -73,6 +73,9 @@ class ImageForensicsEngine(Engine):
                 "n_generalist":    ir.get("n_generalist"),
                 "n_face":          ir.get("n_face"),
                 "skipped":         ir.get("skipped"),
+                # Carried through so the exported report can state the
+                # decision threshold; a verdict without it is unreproducible.
+                "threshold":       ir.get("threshold"),
                 # M7 FE-3. `artifact_map` carries the overlay URL plus the
                 # region summary and, importantly, whether the evidence was
                 # localised at all — see the report UI, which says so rather

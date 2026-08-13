@@ -82,6 +82,9 @@ class VisualForensicsEngine(Engine):
                 "face_avg":         ir.get("face_avg"),
                 "genvideo_score":   ir.get("genvideo_score"),
                 "n_face_detected":  ir.get("n_face_detected"),
+                # Carried through so the exported report can state the
+                # decision threshold; a verdict without it is unreproducible.
+                "threshold":        ir.get("threshold"),
                 # M7 FE-3. A clip's map is a cube, not a grid — ViViT embeds
                 # tubelets, so the evidence is localised in time as well as
                 # space, and the record carries a per-segment profile
