@@ -92,14 +92,18 @@ IMAGE_INPUT_SIZE = 224
 IMAGE_FACE_MARGIN = float(os.environ.get("DEEPTRUTH_IMAGE_FACE_MARGIN", "0.30"))
 
 # ─── Artifact maps (M7 FE-3) ────────────────────────────────────────────────
-# Grad-CAM overlays showing where each checkpoint found its evidence. Costs one
-# backward pass per scoring checkpoint — roughly a 40% increase on an image
-# case's inference time, measured on CPU — in exchange for the difference
-# between a score and an explanation.
+# Grad-CAM overlays showing where each checkpoint found its evidence: the
+# difference between a score and an explanation.
 #
-# Turn off where throughput matters more than explainability; the verdict is
-# identical either way, since the maps are computed from a separate pass and
-# never feed back into the score.
+# Cost, measured on CPU with every model already warm — 18.0s without maps
+# against 33.9s with, explaining 7 checkpoints. So roughly 1.9x, or about 2.3s
+# per checkpoint explained, which is a backward pass costing about as much as
+# the forward one. (Timing a cold worker instead gives a far worse ratio, but
+# that is model loading, not this.)
+#
+# Turn off where throughput matters more than explainability. The verdict is
+# bit-identical either way — verified, not assumed — because the maps come from
+# a separate pass that never feeds back into the score.
 ARTIFACT_MAPS_ENABLED = os.environ.get(
     "DEEPTRUTH_ARTIFACT_MAPS", "1").lower() not in ("0", "false", "no")
 
