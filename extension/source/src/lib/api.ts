@@ -219,6 +219,58 @@ export function buildTitle(pageUrl: string, mediaUrl: string): string {
 }
 
 /**
+ * Ask the server to fetch the media itself, instead of uploading the bytes.
+ *
+ * This is the preferred path (Module 4 FE-1). The extension already had to
+ * download the media to upload it, so the user was paying for the transfer
+ * twice — once down, once up — for every scan. Handing over the URL costs a
+ * few hundred bytes.
+ *
+ * It is not always possible, which is why `startAnalysis` keeps the upload
+ * path as a fallback:
+ *   * `blob:` and `data:` URLs mean nothing outside this page
+ *   * media behind a login is fetchable by the browser (which holds the
+ *     session) and not by the server, which arrives anonymous
+ *   * an origin may simply refuse an unfamiliar client
+ *
+ * The server distinguishes those cases: a 400 means the URL is unusable in
+ * principle and there is no point retrying it, while a case that later fails
+ * with an auth error is the signal to re-submit the bytes.
+ */
+export async function createCaseFromUrl(
+  apiUrl: string,
+  opts: { mediaUrl: string; mediaType: MediaType; title: string; notes?: string },
+): Promise<CaseResponse> {
+  const form = new FormData();
+  form.append('title', opts.title);
+  form.append('media_type', opts.mediaType);
+  form.append('media_url', opts.mediaUrl);
+  form.append('source_url', opts.mediaUrl);
+  if (opts.notes) form.append('notes', opts.notes);
+
+  let res: Response;
+  try {
+    res = await fetch(`${apiBase(apiUrl)}/cases`, { method: 'POST', body: form });
+  } catch {
+    throw new ApiError(
+      0,
+      `Can't reach the analysis server at ${normaliseApiUrl(apiUrl)}. Start the backend and try again.`,
+    );
+  }
+
+  const body = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new ApiError(res.status, readDetail(body, `Server-side fetch failed (${res.status})`));
+  }
+  return body as CaseResponse;
+}
+
+/** True for URLs only this browser can resolve, so the server cannot be asked. */
+export function isBrowserOnlyUrl(mediaUrl: string): boolean {
+  return !/^https?:/i.test(mediaUrl);
+}
+
+/**
  * POST the media to /api/cases. Returns the freshly opened case, which the
  * server hands back as `processing` with analysis already queued.
  */

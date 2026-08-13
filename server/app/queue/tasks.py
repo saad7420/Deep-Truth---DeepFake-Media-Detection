@@ -34,7 +34,9 @@ import random
 import sqlite3
 import time
 import traceback
+import uuid
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import app.utils.env  # noqa: F401  — load server/.env in the worker too
 
@@ -47,6 +49,11 @@ from app.queue.celery_app import celery_app
 log = logging.getLogger(__name__)
 
 DB_PATH = os.getenv("DB_PATH", "forensics.db")
+
+# Same expression as routers/cases.py. Both read the one environment variable
+# so they cannot disagree, and the worker needs its own copy because importing
+# the router here would drag FastAPI into every worker process.
+UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "uploads"))
 
 # Total attempts, not retries: 3 means one run plus two retries.
 MAX_ATTEMPTS = int(os.getenv("ANALYSIS_MAX_ATTEMPTS", "3"))
@@ -132,6 +139,27 @@ def _store_failure(case_db_id: str) -> None:
         conn.close()
 
 
+def _record_downloaded_file(case_db_id: str, *, file_name: str, file_url: str,
+                            size: int) -> None:
+    """Attach the fetched file to its case.
+
+    A URL-submitted case is created before anything is downloaded, so it has no
+    file details until the worker has them. Without this the report page shows
+    a case with no media to preview.
+    """
+    conn = _connect()
+    try:
+        conn.execute(
+            """UPDATE cases
+                  SET file_name = ?, file_url = ?, file_size = ?,
+                      updated_at = datetime('now')
+                WHERE id = ?""",
+            (file_name, file_url, size, case_db_id),
+        )
+    finally:
+        conn.close()
+
+
 def _public_case_id(case_db_id: str) -> str:
     """The CASE-XXXXXXXX id for a row id, or "" if the row is gone.
 
@@ -200,8 +228,15 @@ def _has_signal(rows: list[dict]) -> bool:
     acks_late=True,
 )
 def analyze_case(self: Task, case_db_id: str, media_type: str, file_path: str,
-                 content_sha: str = "", source_url: str = "") -> dict:
+                 content_sha: str = "", source_url: str = "",
+                 media_url: str = "") -> dict:
     """Run one case to completion and record it.
+
+    Either `file_path` (a direct upload, already on disk) or `media_url` (a
+    page URL the server fetches itself — Module 4 FE-1). The download happens
+    here rather than in the API process for two reasons: a transfer the caller
+    does not control must never block the event loop, and network failure is
+    exactly the transient condition the retry policy above already handles.
 
     Returns a small dict for the Celery result backend; the durable record is
     the SQLite row and the Redis job state, both written before this returns.
@@ -218,6 +253,17 @@ def analyze_case(self: Task, case_db_id: str, media_type: str, file_path: str,
 
     started = time.time()
     try:
+        if media_url and not file_path:
+            file_path, content_sha, replayed = _ingest_url(
+                case_db_id, media_type, media_url
+            )
+            if replayed is not None:
+                # The URL was new but its bytes were not. Nothing to analyse.
+                log.info("case=%s served from cache after download (%s)",
+                         case_db_id, media_url)
+                return {"caseDbId": case_db_id, "status": replayed,
+                        "cached": True, "attempts": attempt}
+
         risk, likelihood, status, rows = _run(case_db_id, media_type, file_path)
 
     except PermanentFailure as exc:
@@ -281,7 +327,10 @@ def analyze_case(self: Task, case_db_id: str, media_type: str, file_path: str,
                                 likelihood=likelihood, status=status,
                                 rows=rows, source_case_id=case_db_id,
                                 source_case_ref=_public_case_id(case_db_id)),
-            source_url=source_url or None,
+            # `source_url` is the URL an uploaded file came from; `media_url`
+            # is the URL the server fetched. Either identifies where these
+            # bytes live, and only one is ever set.
+            source_url=source_url or media_url or None,
         )
 
     state.mark_finished(case_db_id, state="succeeded")
@@ -291,6 +340,84 @@ def analyze_case(self: Task, case_db_id: str, media_type: str, file_path: str,
 
     return {"caseDbId": case_db_id, "status": status, "risk": risk,
             "elapsedSeconds": round(elapsed, 1), "attempts": attempt}
+
+
+def _ingest_url(case_db_id: str, media_type: str,
+                media_url: str) -> tuple[str, str, str | None]:
+    """Fetch `media_url` server-side and land it where an upload would be.
+
+    Returns (file_path, content_sha, replayed_status). `replayed_status` is
+    non-None when the downloaded bytes turned out to be already cached, in
+    which case the verdict has been written and there is nothing to analyse.
+
+    That second cache check is not redundant with the API's. The API can only
+    look the URL up, and a URL is a weak key — the same image is served from
+    countless URLs. Once the bytes are in hand the strong key is available, so
+    a first-ever sighting of a URL can still avoid inference entirely.
+    """
+    from app.security.urlfetch import UrlFetchFailed, UrlRejected, fetch
+
+    try:
+        result = fetch(media_url, media_type)
+    except UrlRejected as exc:
+        # The URL itself is the problem: bad host, 404, wrong content, too
+        # large. Retrying cannot change any of those.
+        raise PermanentFailure(str(exc)) from exc
+    except UrlFetchFailed as exc:
+        # Timeout, reset, 5xx. Exactly what retries are for, so this is left
+        # to propagate into the generic handler.
+        raise RuntimeError(f"Download failed: {exc}") from exc
+
+    content_sha = cache.content_hash(result.data)
+
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    suffix = _EXT_FOR_FORMAT.get(result.detected_format, ".bin")
+    safe_name = f"{uuid.uuid4().hex}{suffix}"
+    path = UPLOAD_DIR / safe_name
+    path.write_bytes(result.data)
+
+    # Name from the URL's *path* only. Taking it from the whole URL drags the
+    # query string in, and signed CDN links put a long hmac there — the case
+    # would be labelled "300.jpg?hmac=0aXbwBEwdw...".
+    origin_name = Path(urlsplit(result.final_url).path).name
+    _record_downloaded_file(
+        case_db_id,
+        file_name=origin_name or f"download{suffix}",
+        file_url=f"{BASE_URL}/uploads/{safe_name}",
+        size=len(result.data),
+    )
+    log.info("case=%s fetched %.1f MB from %s", case_db_id,
+             len(result.data) / 1e6, result.final_url)
+
+    # Index the URL against these bytes immediately, on every path. Doing it
+    # only on the cache-hit branch (or leaving it to cache.store at the end)
+    # means a URL's very first fetch never teaches the index, so the second
+    # submission of that URL downloads and analyses it all over again — the
+    # exact saving this module exists to make.
+    cache.remember_url(media_url, content_sha)
+
+    cached = cache.lookup(media_type, content_sha)
+    if cached:
+        rows = cache.rehydrate_rows(cached, case_db_id)
+        _store_success(case_db_id, cached["status"], cached["risk"],
+                       cached["likelihood"], rows)
+        state.mark_finished(case_db_id, state="cached", cache_hit=True)
+        return str(path), content_sha, cached["status"]
+
+    return str(path), content_sha, None
+
+
+#: Extension to give a downloaded file, so the pipeline's suffix-based
+#: dispatch sees something sensible. A CDN path often ends in a hash with no
+#: extension at all, so the detected container is what decides.
+_EXT_FOR_FORMAT = {
+    "jpeg": ".jpg", "png": ".png", "webp": ".webp", "bmp": ".bmp",
+    "tiff": ".tiff", "mp4": ".mp4", "mov": ".mov", "avi": ".avi",
+    "webm": ".webm", "mkv": ".mkv", "mp3": ".mp3", "wav": ".wav",
+    "flac": ".flac", "ogg": ".ogg", "m4a": ".m4a",
+}
+
+BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
 
 
 #: Checkpoint directory each modality needs, by environment variable.

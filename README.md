@@ -96,6 +96,59 @@ invalidation is by version: bump `DEEPTRUTH_CACHE_VERSION` and every entry is
 retired at once. Zero-confidence results are never cached — freezing "we could
 not tell" as a file's permanent answer is worse than recomputing it.
 
+## Server-side media fetch
+
+`POST /cases` takes **either** `file` (upload the bytes) **or** `media_url`
+(the server downloads it). The extension prefers the URL: it already had to
+download the media in order to upload it, so the user was paying for the
+transfer twice, once each way, on every scan.
+
+The download runs in the **worker**, not the API. A transfer whose size and
+speed the caller does not control must never occupy the event loop, and
+network failure is precisely the transient condition the retry policy already
+handles — a 5xx or a timeout is retried, a 404 or a blocked host is not.
+
+### SSRF
+
+"Fetch this URL for me", run by a server inside a private network, is a
+request-forgery primitive: the caller picks the URL and anything the host can
+reach becomes reachable by someone who cannot reach it directly — instance
+metadata at `169.254.169.254`, Redis on `localhost:6379`, an admin panel on a
+`10.x` address. Every fetch is therefore constrained on four axes:
+
+| | |
+|---|---|
+| scheme | `http`/`https` only — no `file:`, `gopher:`, `data:` |
+| address | must resolve to a publicly routable IP, **re-checked per redirect hop** |
+| size | streamed with a running cap, aborted mid-body; `Content-Length` is a hint, not a promise |
+| time | connect, read and total deadlines |
+
+Redirects are followed **manually**, one hop at a time, each destination
+re-resolved and re-validated. Letting the HTTP client follow them would make
+every other check pointless: a public URL is free to 302 onto
+`http://169.254.169.254/`. Re-validating also closes DNS rebinding, where the
+name resolves publicly at submit time and privately a moment later.
+
+Rejections are deliberately vague about *which* address was refused — a
+precise answer turns this endpoint into a working internal port scanner, one
+URL at a time.
+
+`URL_FETCH_ALLOW_PRIVATE=1` opts a deployment out for genuinely internal media;
+`URL_FETCH_ALLOWED_HOSTS` is stronger still and worth setting if only a handful
+of CDNs are ever needed.
+
+### Fallbacks
+
+Server-side fetch is not always possible, so the extension keeps the upload
+path: `blob:`/`data:` URLs mean nothing outside the page, and media behind a
+login is fetchable by the browser (which holds the session) but not by the
+server (which arrives anonymous). The extension tries the URL first and falls
+back to uploading the bytes without troubling the user.
+
+Repeat sightings skip everything: a URL already in the index resolves to a
+content hash and from there to a stored verdict, measured at **57 ms against
+~10 s** for download plus inference.
+
 ## Abuse controls
 
 Two independent guards on the gateway, both in `server/app/security/`.
@@ -198,6 +251,11 @@ Environment knobs, all optional:
 | `STREAM_RATE_LIMIT` | `30/60` | SSE opens |
 | `MAX_CONCURRENT_STREAMS` | 5 | Simultaneous open streams per client |
 | `TRUSTED_PROXY_HOPS` | 0 | See below — leave at 0 unless behind a proxy |
+| `URL_FETCH_ALLOW_PRIVATE` | 0 | Allow fetching from private/loopback addresses |
+| `URL_FETCH_ALLOWED_HOSTS` | — | Comma-separated host allowlist; nothing else is fetchable |
+| `URL_FETCH_MAX_REDIRECTS` | 5 | Each hop is re-validated |
+| `URL_FETCH_TOTAL_TIMEOUT` | 300 | Seconds for a whole transfer |
+| `SSE_MAX_STREAM_SECONDS` | 600 | Stream lifetime before the client reconnects |
 
 `TRUSTED_PROXY_HOPS` deserves a note: at 0 the socket peer is treated as the
 client and `X-Forwarded-For` is ignored entirely, because that header is

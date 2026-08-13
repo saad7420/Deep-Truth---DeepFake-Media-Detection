@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from typing import AsyncIterator, Optional
 
 import redis
@@ -40,6 +41,17 @@ router = APIRouter()
 # and browsers drop idle connections; a comment line costs nothing and keeps
 # the socket open through them.
 HEARTBEAT_SECONDS = 20
+
+# Hard lifetime for one stream, after which the server closes it and the
+# browser's EventSource reconnects on its own (that reconnect is free — the
+# next stream opens with a `snapshot` event carrying current state).
+#
+# Without a bound, a stream lives as long as the tab does, and uvicorn's
+# graceful shutdown waits for open connections: a deploy, or a reload during
+# development, hangs on "Waiting for connections to close" until somebody
+# closes the browser. An unbounded connection is also the thing that makes a
+# leaked stream slot expensive.
+MAX_STREAM_SECONDS = int(os.getenv("SSE_MAX_STREAM_SECONDS", "600"))
 
 
 @router.get("/queue", dependencies=[Depends(ratelimit.read)])
@@ -256,13 +268,20 @@ async def queue_stream(request: Request, case_id: Optional[str] = Query(None)):
                     "workers": worker_snapshot(),
                 })
 
-            last_beat = asyncio.get_event_loop().time()
+            started = asyncio.get_event_loop().time()
+            last_beat = started
 
             while True:
                 # A disconnected browser is only detectable between reads;
                 # checking each iteration keeps closed tabs from leaking a
                 # subscription per reload.
                 if await request.is_disconnected():
+                    break
+
+                if asyncio.get_event_loop().time() - started >= MAX_STREAM_SECONDS:
+                    # Tell the client why, so a reconnect is clearly expected
+                    # rather than looking like a dropped connection.
+                    yield _sse("reconnect", {"reason": "max stream lifetime reached"})
                     break
 
                 # `get_message` is blocking C code, so it runs in a thread —
