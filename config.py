@@ -91,6 +91,24 @@ IMAGE_INPUT_SIZE = 224
 # the value used to train image_ffpp_facecrop_lora_best.
 IMAGE_FACE_MARGIN = float(os.environ.get("DEEPTRUTH_IMAGE_FACE_MARGIN", "0.30"))
 
+# ─── Artifact maps (M7 FE-3) ────────────────────────────────────────────────
+# Grad-CAM overlays showing where each checkpoint found its evidence. Costs one
+# backward pass per scoring checkpoint — roughly a 40% increase on an image
+# case's inference time, measured on CPU — in exchange for the difference
+# between a score and an explanation.
+#
+# Turn off where throughput matters more than explainability; the verdict is
+# identical either way, since the maps are computed from a separate pass and
+# never feed back into the score.
+ARTIFACT_MAPS_ENABLED = os.environ.get(
+    "DEEPTRUTH_ARTIFACT_MAPS", "1").lower() not in ("0", "false", "no")
+
+# A checkpoint reporting almost nothing has no manipulation to localise, and
+# explaining it costs the same backward pass as one that does. Below this
+# P(fake) the map is skipped.
+ARTIFACT_MAP_MIN_SCORE = float(
+    os.environ.get("DEEPTRUTH_ARTIFACT_MAP_MIN_SCORE", "0.10"))
+
 # Per-checkpoint metadata. Keyed by the slug between "image_" and "_lora_best".
 #
 #   role            "generalist" → AI-generated detection across content types

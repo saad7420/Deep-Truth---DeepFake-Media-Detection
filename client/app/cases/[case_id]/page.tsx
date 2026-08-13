@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 
 import AppShell from "@/app/components/AppShell";
+import { ArtifactMapPanel } from "@/app/components/ArtifactMap";
 import { MEDIA_ICON } from "@/app/components/CaseTable";
 import { ConfirmDialog } from "@/app/components/ConfirmDialog";
 import { JobBadge, JobStatusPanel } from "@/app/components/JobStatus";
@@ -248,6 +249,13 @@ export default function CaseReportPage() {
               />
             </div>
           </Panel>
+
+          {/* Directly under the evidence it explains, so the map and the image
+              it came from are read together. */}
+          <ArtifactMapPanel
+            map={summary?.evidence.artifact_map}
+            originalUrl={resolveMediaUrl(c.fileUrl)}
+          />
 
           <Panel className="p-5">
             <SectionRule label="Chain of custody" />

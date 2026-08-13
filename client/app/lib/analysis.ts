@@ -25,7 +25,12 @@
    that field existed, which are still sitting in forensics.db.
    ========================================================================= */
 
-import type { AnalysisResult, CaseStatus, MediaType } from "@/app/shared/schema";
+import type {
+  AnalysisResult,
+  ArtifactMap,
+  CaseStatus,
+  MediaType,
+} from "@/app/shared/schema";
 
 /* ── Checkpoint display names ────────────────────────────────────────────────
    Each adapter is named after the corpus it was fine-tuned on. The slug is
@@ -133,6 +138,12 @@ export interface SummaryEvidence extends VideoEvidence, ImageEvidence, AudioEvid
   error?: string;
   /** Set by `neutral_result()` — explains why the engine contributed nothing. */
   note?: string;
+  /**
+   * Where the evidence sits (M7 FE-3). Null when no map was produced — maps
+   * are skipped for checkpoints that claimed nothing, and the whole pass can
+   * be disabled server-side, so absence is normal rather than an error.
+   */
+  artifact_map?: ArtifactMap | null;
 }
 
 /* ── Derived row types ───────────────────────────────────────────────────── */

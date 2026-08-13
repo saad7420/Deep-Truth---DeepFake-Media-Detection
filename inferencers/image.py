@@ -45,10 +45,12 @@ from typing import Any
 
 import numpy as np
 
+from . import artifact_map
 from .base import Inferencer, InferenceResult
 from ..config import (
     IMAGE_CHECKPOINT_DIR, IMAGE_CHECKPOINT_INFO, IMAGE_BACKBONE_ID,
-    IMAGE_INPUT_SIZE, USE_FP16, DEFAULT_THRESHOLD,
+    IMAGE_INPUT_SIZE, IMAGE_FACE_MARGIN, USE_FP16, DEFAULT_THRESHOLD,
+    ARTIFACT_MAPS_ENABLED, ARTIFACT_MAP_MIN_SCORE,
 )
 from ..ensemble import image_ensemble_decide
 
@@ -360,6 +362,45 @@ class ImageInferencer(Inferencer):
         # across every image_*_lora_best checkpoint.
         return float(probs[1])
 
+    @staticmethod
+    def _face_rect_in_frame(preprocessed: dict[str, Any]) -> tuple[int, int, int, int] | None:
+        """Where the face crop sits inside the 224x224 whole-image frame.
+
+        Reproduces preprocessors/image._crop_with_margin — the detected box
+        padded by IMAGE_FACE_MARGIN on each side and clipped to the image —
+        then rescales from original pixels into the resized frame. The whole
+        branch is a plain resize with no crop, so that rescale is a straight
+        ratio in each axis.
+
+        Returns None when the geometry is not recoverable, and the caller
+        drops the face map rather than guessing at its position.
+        """
+        box = preprocessed.get("face_box")
+        orig = preprocessed.get("orig_size")
+        if not box or not orig or len(box) != 4 or len(orig) != 2:
+            return None
+
+        try:
+            x1, y1, x2, y2 = (float(v) for v in box)
+            ow, oh = (float(v) for v in orig)
+        except (TypeError, ValueError):
+            return None
+        if ow <= 0 or oh <= 0:
+            return None
+
+        pad_x = (x2 - x1) * IMAGE_FACE_MARGIN
+        pad_y = (y2 - y1) * IMAGE_FACE_MARGIN
+        cx1 = max(0.0, x1 - pad_x)
+        cy1 = max(0.0, y1 - pad_y)
+        cx2 = min(ow, x2 + pad_x)
+        cy2 = min(oh, y2 + pad_y)
+        if cx2 <= cx1 or cy2 <= cy1:
+            return None
+
+        sx = IMAGE_INPUT_SIZE / ow
+        sy = IMAGE_INPUT_SIZE / oh
+        return (int(cx1 * sx), int(cy1 * sy), int(cx2 * sx), int(cy2 * sy))
+
     def predict(self, media_key: str, preprocessed: dict[str, Any],
                 **opts) -> InferenceResult:
         self._setup()
@@ -384,6 +425,10 @@ class ImageInferencer(Inferencer):
         per_ckpt_role: dict[str, str] = {}
         skipped: list[dict] = []
 
+        want_maps = bool(opts.get("artifact_maps", ARTIFACT_MAPS_ENABLED))
+        frame_maps: dict[str, np.ndarray] = {}
+        face_rect = self._face_rect_in_frame(preprocessed) if want_maps else None
+
         for ckpt in self._checkpoints:
             slug = ckpt["slug"]
             if ckpt["needs_face_crop"]:
@@ -407,6 +452,26 @@ class ImageInferencer(Inferencer):
                          f"role={ckpt['role']:<10s}  "
                          f"branch={'face' if ckpt['needs_face_crop'] else 'whole'}"
                          f"  ({time.time() - t0:.2f}s)")
+
+                # ── Artifact map (M7 FE-3) ───────────────────────────────
+                # Computed here, while this checkpoint's model is loaded and
+                # its inputs are to hand; doing it in a second pass would mean
+                # loading all eight again. Never allowed to affect `p_fake` —
+                # a map is an explanation of the score, not an input to it, so
+                # any failure is logged and dropped.
+                if want_maps and p_fake >= ARTIFACT_MAP_MIN_SCORE:
+                    cam = artifact_map.compute_cam(model, pixel_values)
+                    if cam is not None and cam.max() > 0:
+                        rect = face_rect if ckpt["needs_face_crop"] else None
+                        if ckpt["needs_face_crop"] and rect is None:
+                            # Crop geometry unknown, so the map cannot be put
+                            # back where it belongs. Dropping it beats drawing
+                            # it in the wrong place.
+                            log.debug(f"  {slug}: face rect unknown, map dropped")
+                        else:
+                            frame_maps[slug] = artifact_map.place_in_frame(
+                                cam, IMAGE_INPUT_SIZE, IMAGE_INPUT_SIZE, rect)
+
             except Exception as e:
                 log.warning(f"  image_{slug} failed: {e}")
                 skipped.append({"slug": slug, "reason": f"inference error: {e}"})
@@ -421,6 +486,9 @@ class ImageInferencer(Inferencer):
             verdict = "UNKNOWN"
         else:
             verdict = "FAKE" if ens >= threshold else "REAL"
+
+        artifact = self._write_artifact_map(whole_path, whole_arr,
+                                            frame_maps, per_ckpt)
 
         return InferenceResult(
             media_key=media_key,
@@ -441,5 +509,45 @@ class ImageInferencer(Inferencer):
                 "per_model_role":  per_ckpt_role,
                 "skipped":         skipped,
                 "threshold":       threshold,
+                "artifact_map":    artifact,
             },
         )
+
+    def _write_artifact_map(self, whole_path: str, whole_arr: np.ndarray,
+                            frame_maps: dict[str, np.ndarray],
+                            per_ckpt: dict[str, float]) -> dict | None:
+        """Fuse the per-checkpoint maps, render the overlay, return its record.
+
+        Written beside the preprocessed tensors, under the same media_key
+        directory, so it is cached and cleaned up on exactly the same terms as
+        everything else derived from this file. The server copies it somewhere
+        servable; the pipeline stays unaware that a web layer exists.
+
+        The overlay is drawn on the 224x224 tensor the models actually saw,
+        not the original upload. Rendering onto the full-resolution original
+        would look better and would be a small lie: the map has 14x14 of real
+        resolution, and showing it over a 4K frame invites reading detail into
+        it that is not there.
+        """
+        if not frame_maps:
+            return None
+
+        try:
+            combined = artifact_map.combine(frame_maps, per_ckpt)
+            if combined is None:
+                return None
+
+            out_path = Path(whole_path).parent / "artifact_map.png"
+            artifact_map.render_overlay(whole_arr, combined, str(out_path))
+
+            record = artifact_map.summarise(combined)
+            record["path"] = str(out_path)
+            record["method"] = "grad-cam/vit-last-block-prenorm"
+            record["contributors"] = sorted(frame_maps.keys())
+            log.info(f"  artifact map: {len(frame_maps)} checkpoint(s), "
+                     f"concentration={record['concentration']:.2f}, "
+                     f"localised={record['localised']}")
+            return record
+        except Exception as e:  # noqa: BLE001 — never fail a case over a picture
+            log.warning(f"  artifact map rendering failed: {e}")
+            return None

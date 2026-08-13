@@ -96,6 +96,60 @@ invalidation is by version: bump `DEEPTRUTH_CACHE_VERSION` and every entry is
 retired at once. Zero-confidence results are never cached — freezing "we could
 not tell" as a file's permanent answer is worse than recomputing it.
 
+## Artifact maps
+
+A score is not evidence. "84% synthetic" says what the model concluded, not
+what it saw, and gives an operator no way to separate a real detection from a
+confident mistake. Image cases now carry a heat map of the regions that drove
+the verdict, rendered over the 224×224 tensor the models actually saw.
+
+Grad-CAM, adapted for a ViT: the 196 patch tokens are a 14×14 grid, so the
+usual arithmetic applies once the sequence is reshaped. Each checkpoint that
+claimed something (P(fake) ≥ 0.10) contributes one map, and they are fused
+weighted by that claim — a checkpoint reporting 1% synthetic is not asserting
+anything is wrong anywhere, so averaging its map in would only dilute the ones
+that are.
+
+**The layer to hook is the one non-obvious detail.** `ViTForImageClassification`
+classifies from the CLS token alone, so at the *output* of the last encoder
+block the patch tokens feed nothing downstream and `d(logit)/d(patch)` is
+exactly zero — hooking there yields an all-zero map, silently, on every image.
+The hook goes on `layernorm_before` of the last block instead, ahead of that
+block's attention, where patch tokens still reach CLS.
+
+The face-crop checkpoint sees a crop, so its map is in crop coordinates and is
+projected back into frame coordinates before fusion. Compositing it directly
+would draw the mouth over somebody's shoulder, and a forensic tool pointing at
+the wrong region is worse than one pointing nowhere.
+
+### How much to trust them
+
+Measured by deletion test — occlude the top 10% of the map and see whether
+P(fake) drops more than occluding a random 10%:
+
+| | |
+|---|---|
+| Clearly faithful | 5 of 12 checkpoint/image pairs |
+| No measurable effect either way | 6 |
+| Worse than random | 1 (`ffpp_facecrop` on one image) |
+
+Nearly all the inconclusive cases are on an image every checkpoint scored above
+0.95, where occluding *anything* barely moves the score — the evidence is
+global texture, not a local edit. That is a real property of the input, not a
+defect in the map, and it is why the UI reads `localised` before choosing its
+wording: a concentrated map is described as the region that drove the verdict,
+a diffuse one explicitly as attention rather than a marked-up area.
+
+Grad-CAM is a saliency approximation, not a segmentation, and 14×14 localises
+to about a sixteenth of the frame per cell — enough to say "the mouth region",
+not enough to trace a splice boundary. It also explains the *model*, not the
+image: a checkpoint keying on a JPEG artefact will produce a confident map over
+that artefact.
+
+Costs one backward pass per contributing checkpoint. Set
+`DEEPTRUTH_ARTIFACT_MAPS=0` to skip it; the verdict is identical either way,
+since the maps are computed separately and never feed back into the score.
+
 ## Server-side media fetch
 
 `POST /cases` takes **either** `file` (upload the bytes) **or** `media_url`
@@ -256,6 +310,9 @@ Environment knobs, all optional:
 | `URL_FETCH_MAX_REDIRECTS` | 5 | Each hop is re-validated |
 | `URL_FETCH_TOTAL_TIMEOUT` | 300 | Seconds for a whole transfer |
 | `SSE_MAX_STREAM_SECONDS` | 600 | Stream lifetime before the client reconnects |
+| `DEEPTRUTH_ARTIFACT_MAPS` | 1 | Set to 0 to skip artifact-map generation |
+| `DEEPTRUTH_ARTIFACT_MAP_MIN_SCORE` | 0.10 | P(fake) below which a checkpoint gets no map |
+| `ARTIFACT_DIR` | `artifacts` | Where rendered maps are published |
 
 `TRUSTED_PROXY_HOPS` deserves a note: at 0 the socket peer is treated as the
 client and `X-Forwarded-For` is ignored entirely, because that header is
