@@ -18,6 +18,7 @@ from typing import Optional
 import aiosqlite
 from fastapi import (
     APIRouter,
+    Depends,
     File,
     Form,
     HTTPException,
@@ -35,6 +36,8 @@ from app.models import (
 from app.queue import cache, state
 from app.queue.redis_client import BrokerUnavailable, require as require_broker
 from app.queue.tasks import MAX_ATTEMPTS, analyze_case
+from app.security import ratelimit
+from app.security.media import validate_signature
 from app.services.analyser import validate_file
 
 router = APIRouter()
@@ -147,7 +150,8 @@ async def _replay_cached(case_db_id: str, payload: dict) -> None:
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
-@router.get("/cases", response_model=CaseListResponse)
+@router.get("/cases", response_model=CaseListResponse,
+            dependencies=[Depends(ratelimit.read)])
 async def list_cases(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -201,7 +205,8 @@ async def list_cases(
     return {"cases": cases, "total": total, "page": page, "page_size": page_size}
 
 
-@router.post("/cases", response_model=CaseResponse, status_code=201)
+@router.post("/cases", response_model=CaseResponse, status_code=201,
+             dependencies=[Depends(ratelimit.upload)])
 async def create_case(
     title: str = Form(...),
     media_type: str = Form(...),
@@ -229,6 +234,14 @@ async def create_case(
 
     content = await file.read()
     error = validate_file(media_type, file.content_type or "", len(content))
+    if error:
+        raise HTTPException(422, error)
+
+    # The check above tested the Content-Type the *caller* sent, which is just
+    # a string they chose. This one tests the bytes. Both run: the header check
+    # gives the better message for an honest client-side mistake, the
+    # signature check is what actually keeps undecodable content off a worker.
+    error = validate_signature(media_type, content)
     if error:
         raise HTTPException(422, error)
 
@@ -329,7 +342,8 @@ async def _mark_case_failed(case_db_id: str) -> None:
         await db.close()
 
 
-@router.get("/cases/{case_id}", response_model=CaseResponse)
+@router.get("/cases/{case_id}", response_model=CaseResponse,
+            dependencies=[Depends(ratelimit.read)])
 async def get_case(case_id: str):
     """Fetch a single case including its analysis results."""
     db = await get_db()
@@ -346,7 +360,8 @@ async def get_case(case_id: str):
     return _build_response(row_dict, results, state.get_job(row_dict["id"]))
 
 
-@router.patch("/cases/{case_id}", response_model=CaseResponse)
+@router.patch("/cases/{case_id}", response_model=CaseResponse,
+              dependencies=[Depends(ratelimit.write)])
 async def update_case(case_id: str, body: CaseUpdate):
     """Partially update a case (title, status, scores, notes)."""
     db = await get_db()
@@ -386,7 +401,8 @@ async def update_case(case_id: str, body: CaseUpdate):
     return _build_response(row, results, state.get_job(internal_id))
 
 
-@router.delete("/cases/{case_id}", status_code=204)
+@router.delete("/cases/{case_id}", status_code=204,
+               dependencies=[Depends(ratelimit.write)])
 async def delete_case(case_id: str):
     """Permanently delete a case and its analysis results."""
     db = await get_db()
@@ -409,7 +425,8 @@ async def delete_case(case_id: str):
         await db.close()
 
 
-@router.get("/stats", response_model=DashboardStats)
+@router.get("/stats", response_model=DashboardStats,
+            dependencies=[Depends(ratelimit.read)])
 async def get_stats():
     """Aggregate dashboard statistics."""
     db = await get_db()

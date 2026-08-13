@@ -62,13 +62,28 @@ const POLL_MS = 5000;
  * Auto-refreshes every few seconds while any case in the current page is
  * still processing, then stops — no polling on a settled list.
  */
+/**
+ * Back off hard on 429, retry other failures normally.
+ *
+ * Without this, a rate-limited poll is retried immediately, which keeps the
+ * bucket empty and turns a brief overshoot into a stuck console. The server
+ * sends Retry-After; a fixed 30s pause is longer than the 60s window's worst
+ * case needs and simpler than parsing it per query.
+ */
+const retryUnlessLimited = (count: number, error: Error) =>
+  !(error instanceof ApiError && (error.isRateLimited || error.isNotFound)) && count < 2;
+
 export function useCases(params?: CaseListParams) {
   return useQuery({
     queryKey: caseKeys.list(params),
     queryFn: () => casesApi.list(params),
     placeholderData: keepPreviousData,
     staleTime: 10_000,
+    retry: retryUnlessLimited,
     refetchInterval: (query) => {
+      if (query.state.error instanceof ApiError && query.state.error.isRateLimited) {
+        return 30_000;
+      }
       const data = query.state.data;
       if (!data) return false;
       return data.cases.some((c) => c.status === "processing") ? POLL_MS : false;
@@ -82,9 +97,13 @@ export function useCase(caseId?: string) {
     queryKey: caseKeys.detail(caseId ?? ""),
     queryFn: () => casesApi.get(caseId as string),
     enabled: Boolean(caseId),
-    retry: (count, error) => !(error instanceof ApiError && error.isNotFound) && count < 2,
-    refetchInterval: (query) =>
-      query.state.data?.status === "processing" ? POLL_MS : false,
+    retry: retryUnlessLimited,
+    refetchInterval: (query) => {
+      if (query.state.error instanceof ApiError && query.state.error.isRateLimited) {
+        return 30_000;
+      }
+      return query.state.data?.status === "processing" ? POLL_MS : false;
+    },
   });
 }
 
@@ -125,7 +144,12 @@ export function useQueueOverview(enabled = true) {
     queryFn: () => queueApi.overview(),
     enabled,
     retry: false,
-    refetchInterval: 5_000,
+    // This is the most frequent poll in the console, so it is the one most
+    // likely to trip the read limit when several tabs are open.
+    refetchInterval: (query) =>
+      query.state.error instanceof ApiError && query.state.error.isRateLimited
+        ? 30_000
+        : 5_000,
     staleTime: 2_000,
   });
 }

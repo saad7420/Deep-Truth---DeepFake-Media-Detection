@@ -1,16 +1,23 @@
 """Health check endpoint."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from app.models import HealthResponse
 from app.database import DB_PATH, get_db
 from app.queue.redis_client import ping
 from app.queue.tasks import worker_snapshot
+from app.security import ratelimit
 import os
 
 router = APIRouter()
 
 
-@router.get("/health", response_model=HealthResponse)
+# Limited despite being a health check, because it is not the cheap endpoint it
+# looks like: `worker_snapshot()` issues three broadcast control RPCs to the
+# Celery pool per call. Unlimited, it is a way to make the workers do the
+# caller's work for them. The read budget is far above any monitoring probe's
+# rate.
+@router.get("/health", response_model=HealthResponse,
+            dependencies=[Depends(ratelimit.read)])
 async def health():
     db_status = "unavailable"
     try:

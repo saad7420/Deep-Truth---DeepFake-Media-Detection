@@ -96,6 +96,53 @@ invalidation is by version: bump `DEEPTRUTH_CACHE_VERSION` and every entry is
 retired at once. Zero-confidence results are never cached — freezing "we could
 not tell" as a file's permanent answer is worse than recomputing it.
 
+## Abuse controls
+
+Two independent guards on the gateway, both in `server/app/security/`.
+
+**Rate limiting.** `POST /cases` accepts a 500 MB file and queues a job that
+occupies one of two worker slots for minutes, so a client looping it takes the
+pipeline away from everyone else with a handful of requests. Limits are
+enforced as a sliding-window log in Redis, admitted by a single Lua script so
+the decision is atomic — verified by admitting exactly 25 of 200 requests fired
+50-wide. Counters live in Redis rather than process memory, so running several
+API workers does not multiply the effective limit.
+
+A fixed-window counter would have been cheaper, but it lets a caller send the
+full allowance at 0:59 and again at 1:01 — double the intended rate at the
+moment a burst hurts most.
+
+| Bucket | Default | Routes |
+|--------|---------|--------|
+| upload | 10/60s  | `POST /cases` |
+| write  | 60/60s  | `PATCH`, `DELETE /cases/{id}` |
+| read   | 300/60s | case reads, `/stats`, `/queue*`, `/cache/lookup`, `/health` |
+| stream | 30/60s  | opening `/queue/stream` |
+
+Responses carry `RateLimit-Limit`, `-Remaining` and `-Reset`; a 429 also carries
+`Retry-After`. If Redis is unreachable the limiter **fails open** and omits
+those headers rather than advertising a budget it did not check — a limiter
+outage must not become an API outage, and the expensive path is already refused
+with a 503 in that state.
+
+`/queue/stream` additionally caps **concurrent** open streams per client
+(`MAX_CONCURRENT_STREAMS`, default 5). Limiting opens is not sufficient on its
+own: each live stream holds a Redis pub/sub connection and a thread, so a
+client that opens streams and never closes them exhausts the pool while staying
+inside any per-minute limit.
+
+**Content validation.** `validate_file` checks the `Content-Type` the *caller
+sent*, which is a string they chose. Uploads are now also matched against the
+container signatures of the formats the pipeline supports, and a mismatch is
+refused at the gateway. This is not about code execution — nothing here runs
+the file — it is that undecodable content otherwise reaches a worker, occupies
+a slot for a model load, and returns "inconclusive", which reads like a
+considered verdict rather than "this was never an image". 40 KB of `urandom`
+declared as `image/jpeg` produced exactly that before the check existed.
+
+Cross-modality mistakes get a specific message (*"this is an MP4 video, but it
+was submitted as image"*) since that one is usually an honest client bug.
+
 ### Running the stack
 
 Redis is required. Without it `POST /cases` returns 503 rather than silently
@@ -144,6 +191,24 @@ Environment knobs, all optional:
 | `ANALYSIS_RETRY_BASE_DELAY` | 10 | Seconds; backoff base |
 | `DEEPTRUTH_CACHE_VERSION` | `v1` | Bump to retire every cached verdict |
 | `DEEPTRUTH_CACHE_TTL` | 0 | Seconds; 0 means entries never expire |
+| `RATE_LIMIT_ENABLED` | 1 | Set to 0 only for local load testing |
+| `UPLOAD_RATE_LIMIT` | `10/60` | `<count>/<seconds>`; same form for the others |
+| `READ_RATE_LIMIT` | `300/60` | Reads, including `/health` |
+| `WRITE_RATE_LIMIT` | `60/60` | PATCH and DELETE |
+| `STREAM_RATE_LIMIT` | `30/60` | SSE opens |
+| `MAX_CONCURRENT_STREAMS` | 5 | Simultaneous open streams per client |
+| `TRUSTED_PROXY_HOPS` | 0 | See below — leave at 0 unless behind a proxy |
+
+`TRUSTED_PROXY_HOPS` deserves a note: at 0 the socket peer is treated as the
+client and `X-Forwarded-For` is ignored entirely, because that header is
+caller-supplied and honouring it would let anyone reset their own bucket by
+inventing an IP. Set it to the real number of reverse proxies when deploying
+behind nginx or a load balancer, and the client is read that many entries in
+from the right of the header — the hops trusted infrastructure appended, not
+the ones a caller sent.
+
+No new dependency was needed: the limiter uses the `redis` client already
+required by the queue.
 
 CLI, without the web stack:
 

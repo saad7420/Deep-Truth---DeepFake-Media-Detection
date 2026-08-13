@@ -23,13 +23,14 @@ import logging
 from typing import AsyncIterator, Optional
 
 import redis
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
 from app.database import get_db
 from app.queue import cache, state
 from app.queue.redis_client import get_client, ping
 from app.queue.tasks import active_jobs, worker_snapshot
+from app.security import ratelimit
 
 log = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ router = APIRouter()
 HEARTBEAT_SECONDS = 20
 
 
-@router.get("/queue")
+@router.get("/queue", dependencies=[Depends(ratelimit.read)])
 async def queue_overview():
     """System health for the orchestration layer.
 
@@ -83,7 +84,7 @@ async def queue_overview():
     }
 
 
-@router.get("/queue/pending")
+@router.get("/queue/pending", dependencies=[Depends(ratelimit.read)])
 async def queue_pending(limit: int = Query(25, ge=1, le=100)):
     """Waiting jobs in execution order, resolved to their public case ids."""
     ids = state.pending_ids(limit)
@@ -101,7 +102,7 @@ async def queue_pending(limit: int = Query(25, ge=1, le=100)):
     return {"pending": out, "depth": state.pending_depth()}
 
 
-@router.get("/queue/cases/{case_id}")
+@router.get("/queue/cases/{case_id}", dependencies=[Depends(ratelimit.read)])
 async def queue_case(case_id: str):
     """One case's job record, addressed by the public `CASE-XXXXXXXX` id.
 
@@ -120,7 +121,7 @@ async def queue_case(case_id: str):
     return {"caseDbId": db_id, **job}
 
 
-@router.get("/cache/lookup")
+@router.get("/cache/lookup", dependencies=[Depends(ratelimit.read)])
 async def cache_lookup(
     media_type: str = Query(..., description="image | video | audio"),
     url: Optional[str] = Query(None, description="Media URL seen on a page"),
@@ -209,7 +210,7 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
-@router.get("/queue/stream")
+@router.get("/queue/stream", dependencies=[Depends(ratelimit.stream)])
 async def queue_stream(request: Request, case_id: Optional[str] = Query(None)):
     """Push every job transition to the browser as it happens.
 
@@ -227,12 +228,19 @@ async def queue_stream(request: Request, case_id: Optional[str] = Query(None)):
 
     watch_db_id = await _resolve_db_id(case_id) if case_id else None
 
+    # Claimed before the generator starts so the 429 is a plain rejected
+    # request. Raising inside the generator would already have committed a 200
+    # and streaming headers, leaving the client a stream that opens and then
+    # dies for no stated reason.
+    slot = ratelimit.StreamSlot(request).__enter__()
+
     async def events() -> AsyncIterator[str]:
         client = get_client()
         pubsub = client.pubsub(ignore_subscribe_messages=True)
         try:
             pubsub.subscribe(state.EVENTS_CHANNEL)
         except redis.RedisError as exc:
+            slot.__exit__(None, None, None)
             yield _sse("error", {"message": f"Could not subscribe: {exc}"})
             return
 
@@ -288,6 +296,11 @@ async def queue_stream(request: Request, case_id: Optional[str] = Query(None)):
         except asyncio.CancelledError:
             raise
         finally:
+            # Runs on every exit path including client disconnect, which
+            # arrives here as CancelledError. Releasing the slot matters more
+            # than closing pubsub: a leaked slot costs that client capacity
+            # until its hour-long TTL expires.
+            slot.__exit__(None, None, None)
             try:
                 pubsub.close()
             except redis.RedisError:
