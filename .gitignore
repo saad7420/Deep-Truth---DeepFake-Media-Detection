@@ -30,6 +30,14 @@ server/uploads/*
 server/_dtp_cache/
 server/_dtp_logs/
 server/artifacts/
+
+# Runtime state from scripts/start.sh and start.ps1 — pids and logs.
+.run/
+
+# Next.js 16 writes these on every `npm run dev`. They are generated
+# scaffolding, not source, and they reappear on their own.
+client/AGENTS.md
+client/CLAUDE.md
 preprocessed/
 *.npy
 

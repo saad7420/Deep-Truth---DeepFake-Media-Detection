@@ -302,32 +302,72 @@ was submitted as image"*) since that one is usually an honest client bug.
 
 ### Running the stack
 
-Redis is required. Without it `POST /cases` returns 503 rather than silently
-falling back to in-process analysis, which would abandon the ordering,
-parallelism and retry guarantees the queue exists to provide.
+The stack is four processes — Redis, the API, one or more Celery workers, and
+the Next.js console. There is a script per platform that checks every
+dependency, installs what is missing, starts all of it, and reports health.
+
+**Linux / macOS**
 
 ```bash
-sudo apt install -y redis-server
+./scripts/start.sh
 ```
 
-Backend (from `server/`), in three terminals:
+**Windows 10/11**
 
-```bash
-pip install -r requirements.txt
+```powershell
+.\scripts\start.ps1
 ```
 
-```bash
-python main.py
-```
+Both take the same flags:
+
+| | |
+|---|---|
+| `--check` / `-Check` | report what's missing, change nothing |
+| `--stop` / `-Stop` | stop everything the script started |
+| `--restart` / `-Restart` | **required after changing Python code** |
+| `--status` / `-Status` | what's running, plus API health |
+| `--logs` / `-Logs` | follow the logs |
+| `--workers N` / `-Workers N` | how many files to analyse at once |
+| `--no-web` / `-NoWeb` | API and worker only |
+| `--yes` / `-Yes` | don't prompt before installing packages |
+
+Logs and PID files live in `.run/` (gitignored). The scripts track PIDs rather
+than matching process names, so stopping never takes out a worker you started
+yourself in another terminal, and they walk the process tree before killing —
+`npm run dev` spawns a `next-server` child that otherwise survives and keeps
+port 3000.
+
+**`--restart` after editing Python is not optional.** Uvicorn hot-reloads;
+Celery does not. A worker keeps running the code it started with, which is the
+most reliable way to lose twenty minutes debugging a change that is not loaded.
+
+#### Windows differences
+
+Three things genuinely differ, which is why there are two scripts rather than
+one and a footnote:
+
+- **Celery's prefork pool cannot work on Windows.** It needs `fork()`. The
+  worker starts and then fails or hangs the moment it picks up a task. The
+  script uses `--pool=solo`, which handles one task at a time — so concurrency
+  comes from running several workers (`-Workers 2`) rather than from
+  `--concurrency`.
+- **There is no official Redis for Windows.** The script detects Memurai, WSL
+  or Docker and points at whichever is present. Any of them works unchanged;
+  the app only needs `localhost:6379`.
+- **`import deeptruth_pipeline` needs the folder to carry that name.** Symlinks
+  need admin or Developer Mode, so the script tries a junction and otherwise
+  tells you to rename the clone.
+
+Running the whole stack inside WSL2 avoids all three and is identical to Linux.
+
+#### By hand
 
 ```bash
-./run_worker.sh
-```
-
-Frontend (from `client/`):
-
-```bash
-npm install && npm run dev
+sudo apt install -y redis-server           # or Memurai / WSL / Docker
+cd server && pip install -r requirements.txt
+python main.py                             # terminal 1
+./run_worker.sh                            # terminal 2  (--pool=solo on Windows)
+cd client && npm install && npm run dev    # terminal 3
 ```
 
 The API listens on `http://localhost:8000`, the app on
