@@ -17,12 +17,12 @@ import os
 from .preprocessors.base import Preprocessor
 from .preprocessors.video import VideoPreprocessor
 from .preprocessors.image import ImagePreprocessor
-from .preprocessors.srm import SRMPreprocessor
+from .preprocessors import SRMPreprocessor
 from .preprocessors.stubs import AudioPreprocessor
 from .inferencers.base import Inferencer
 from .inferencers.video import VideoInferencer
 from .inferencers.image import ImageInferencer
-from .inferencers.srm import SRMInferencer
+from .inferencers import SRMInferencer
 from .inferencers.stubs import AudioInferencer
 from .storage import CacheStore
 from .config import (AUDIO_CHECKPOINT, AUDIO_THRESHOLD,
