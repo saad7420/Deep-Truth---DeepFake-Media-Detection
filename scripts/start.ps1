@@ -304,8 +304,8 @@ function Count-Adapters { param($Dir)
     if (-not (Test-Path $Dir)) { return 0 }
     return (Get-ChildItem $Dir -Recurse -Depth 1 -Filter 'adapter_config.json' -ErrorAction SilentlyContinue).Count
 }
-$v = Count-Adapters (Join-Path $RepoRoot 'videos_checkpoints')
-$i = Count-Adapters (Join-Path $RepoRoot 'images_checkpoints')
+$v = Count-Adapters (Join-Path $RepoRoot 'checkpoints\videos_checkpoints')
+$i = Count-Adapters (Join-Path $RepoRoot 'checkpoints\images_checkpoints')
 if ($v -gt 0) { Write-Ok "video: $v adapters" } else { Write-Bad 'no video adapters in videos_checkpoints\'; $missing = 1 }
 if ($i -gt 0) { Write-Ok "image: $i adapters" } else { Write-Bad 'no image adapters in images_checkpoints\'; $missing = 1 }
 

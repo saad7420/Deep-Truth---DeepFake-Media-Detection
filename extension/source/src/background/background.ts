@@ -52,8 +52,11 @@ const POLL_ALARM = 'deep-truth-poll';
     self-rescheduling timer while the worker is alive and uses the alarm only
     as a safety net if it gets suspended mid-scan. */
 const POLL_MS = 2000;
-/** A case that never settles shouldn't be polled forever. */
-const POLL_TIMEOUT_MS = 5 * 60 * 1000;
+/** A case that never settles shouldn't be polled forever. Matches the
+    worker's 30-minute soft limit plus slack: a 9-second clip takes ~8 minutes
+    on a CPU-only worker, so the old 5-minute cutoff reported live jobs as
+    failed. */
+const POLL_TIMEOUT_MS = 35 * 60 * 1000;
 
 /* ── Settings ────────────────────────────────────────────────────────────── */
 

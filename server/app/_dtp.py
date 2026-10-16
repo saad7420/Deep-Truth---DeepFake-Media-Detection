@@ -42,11 +42,23 @@ def bootstrap() -> Path:
     if parent not in sys.path:
         sys.path.insert(0, parent)
 
+    # Weights live under checkpoints/. The old top-level videos_checkpoints/
+    # and images_checkpoints/ paths made every case fail with
+    # CheckpointsUnavailable unless env vars were exported by hand.
+    ckpts = PROJECT_ROOT / "checkpoints"
     os.environ.setdefault("DEEPTRUTH_ROOT", str(PROJECT_ROOT))
     os.environ.setdefault("DEEPTRUTH_CHECKPOINTS",
-                          str(PROJECT_ROOT / "videos_checkpoints"))
+                          str(ckpts / "videos_checkpoints"))
     os.environ.setdefault("DEEPTRUTH_IMAGE_CHECKPOINTS",
-                          str(PROJECT_ROOT / "images_checkpoints"))
+                          str(ckpts / "images_checkpoints"))
+    # Audio and SRM only switch from stub to real model when these are set,
+    # so set them only when the weights are actually on disk.
+    if (ckpts / "audios_checkpoints" / "model.pt").is_file():
+        os.environ.setdefault("DEEPTRUTH_AUDIO_CHECKPOINT",
+                              str(ckpts / "audios_checkpoints"))
+    if (ckpts / "srm_checkpoints" / "model.pt").is_file():
+        os.environ.setdefault("DEEPTRUTH_SRM_CHECKPOINT",
+                              str(ckpts / "srm_checkpoints" / "model.pt"))
     os.environ.setdefault("DEEPTRUTH_TRAIN_PIPELINE",
                           str(PROJECT_ROOT / "train_pipeline" / "deeptruth_train.py"))
     os.environ.setdefault("DEEPTRUTH_CACHE", str(SERVER_ROOT / "_dtp_cache"))
