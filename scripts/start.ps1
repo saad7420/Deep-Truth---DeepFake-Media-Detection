@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Deep Truth — one-command setup and run (Windows 10/11, PowerShell 5.1+).
 
@@ -257,14 +257,14 @@ Write-Step '4. Python dependencies'
 if ($Py) {
     $probe = @'
 import importlib
-need = {"torch":"torch","transformers":"transformers","peft":"peft","fastapi":"fastapi",
-        "celery":"celery","redis":"redis","httpx":"httpx","reportlab":"reportlab",
-        "aiosqlite":"aiosqlite","PIL":"pillow","cv2":"opencv-python","av":"av","uvicorn":"uvicorn"}
+need = {'torch':'torch','transformers':'transformers','peft':'peft','fastapi':'fastapi',
+        'celery':'celery','redis':'redis','httpx':'httpx','reportlab':'reportlab',
+        'aiosqlite':'aiosqlite','PIL':'pillow','cv2':'opencv-python','av':'av','uvicorn':'uvicorn'}
 missing=[]
 for m,p in need.items():
     try: importlib.import_module(m)
     except Exception: missing.append(p)
-print(" ".join(sorted(set(missing))))
+print(' '.join(sorted(set(missing))))
 '@
     $missingPy = (& $Py -c $probe 2>$null)
     if ([string]::IsNullOrWhiteSpace($missingPy)) {

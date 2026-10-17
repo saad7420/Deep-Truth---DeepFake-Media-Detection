@@ -76,3 +76,6 @@ node_modules/
 # OS generated files
 .DS_Store
 Thumbs.db
+# Local scratch: duplicate project copy and terminal captures
+deeptruth_pipeline2/
+dfgb
