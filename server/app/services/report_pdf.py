@@ -412,12 +412,16 @@ def build_report(case: dict, results: list[dict], job: dict | None = None) -> by
         for r in secondary:
             d = r.get("details") or {}
             note = d.get("note") or d.get("rationale") or ""
+            score = (f" ({r.get('confidence', 0):.1f}% synthetic)"
+                     if d.get("signal") in ("visual_stream", "audio_stream") else "")
             story.append(Paragraph(
-                f"<b>{_esc(r.get('model_name'))}</b> — {_esc(note)}", st["small"]))
+                f"<b>{_esc(r.get('model_name'))}</b>{score} — {_esc(note)}",
+                st["small"]))
         story.append(Spacer(1, 2))
         story.append(Paragraph(
-            "Supplementary signals are recorded as evidence but never override "
-            "the primary verdict.", st["caption"]))
+            "For videos, the frames and soundtrack streams are fused into the "
+            "verdict above; other supplementary signals (SRM noise analysis) are "
+            "recorded as evidence but never override it.", st["caption"]))
 
     # ── Provenance ──────────────────────────────────────────────────────────
     story.append(PageBreak())

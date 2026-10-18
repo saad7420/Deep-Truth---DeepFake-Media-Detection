@@ -330,8 +330,8 @@ export default function ReportPage() {
         {secondarySignals.length > 0 && (
           <Section title={`${checkpoints.length > 0 ? "5" : "4"} · Supplementary signals`}>
             <p className="mb-3 text-xs text-slate-500">
-              Additional evidence gathered alongside the primary engine. These do not
-              contribute to the verdict or fused risk score above.
+              Per-stream results and additional evidence. For videos, the frames and
+              soundtrack streams feed the fused verdict above; SRM noise analysis does not.
             </p>
             <ul className="space-y-2">
               {secondarySignals.map((s, i) => (

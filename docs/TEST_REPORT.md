@@ -79,9 +79,11 @@ Only 3 files, so these show behaviour, not statistical accuracy.
 4. **Image ensemble dilution.** One model is near-certain (ntire 0.997), but averaging with weak models pulls the
    result to 0.56, which lands in the inconclusive band. The config.py AUC weights are also wrong (see earlier review).
 5. **SRM is too weak to use** (34% EER, trained 0.7 min on CASIA v2 tampering, not AI generation).
-6. **Fusion (Module 9) isn't implemented as the report describes.** The report promises audio + visual weighted fusion,
-   but the server analyses a video's frames only (`modalities=["video"]`), audio never affects a video case, and SRM is
-   info-only.
+6. **Fusion (Module 9) was missing at the time of this test; it has since been added.** Video cases now run the audio
+   engine on the soundtrack and fuse it with the frames (`server/app/services/fusion.py`): the strongest weighted alarm
+   wins, the manipulation type is reported (visual_only / audio_only / audio_and_visual / none), and the experimental
+   audio model is weighted 0.25 so it can raise doubt but never convict alone. Re-run on the phone video: fused 72.3%,
+   type audio_and_visual, so the verdict is still wrong because both inputs are wrong. SRM stays info-only.
 
 ## 5. Report-vs-implementation gaps found while testing
 
@@ -89,7 +91,7 @@ Only 3 files, so these show behaviour, not statistical accuracy.
 |---|---|
 | Verdict in 5–15 s (LI-4) | image ~2 min, 9 s video ~8 min, 47 s video ~8 min (CPU) |
 | Samples 1–2 frames/sec | fixed 16 frames per video, whatever its length |
-| FR9 fusion combines audio + visual | not combined; see root cause 6 |
+| FR9 fusion combines audio + visual | implemented after this test; see root cause 6 |
 | "Fusion must improve overall accuracy" | not measured anywhere |
 
 ## 6. Bugs found and fixed during testing
@@ -118,8 +120,8 @@ To run it:
 
 ## 8. What would raise accuracy (next phase)
 
-1. Fix fusion: for video, include audio, and stop face models overriding when there are no face artefacts (calibrated
-   weighted average instead of `max`).
+1. Stop the face models overriding when there are no face artefacts (a calibrated weighted average instead of `max`),
+   and measure whether audio-visual fusion beats the best single stream.
 2. Retrain or fine-tune `genvideo` on modern generators (Sora/Veo/Kling/Runway samples) — the actual threat in your report.
 3. Audio: retrain on ASVspoof5 / In-the-Wild / real phone recordings, more than 1 epoch, and use the calibrated threshold.
 4. Build a labelled test set (≥100 real + ≥100 fake per modality, including phone and WhatsApp-compressed media) and report

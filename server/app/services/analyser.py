@@ -244,6 +244,14 @@ async def _analyse_with_engine(case_db_id: str, file_path: str,
           f"confidence={result.confidence:.2f}  "
           f"checkpoints={len(result.evidence.get('per_checkpoint') or {})}")
 
+    # ── Audio-visual fusion (Module 9), video only ─────────────────────────
+    # The frames alone cannot catch authentic footage with a cloned voice, so
+    # the soundtrack is analysed too and the two streams are fused. The
+    # per-stream rows become "secondary" and the fused row is the verdict.
+    if modality == "visual":
+        risk, status = await _fuse_audio_visual(case_db_id, file_path,
+                                                result, rows)
+
     # ── SRM supplementary pass ──────────────────────────────────────────────
     # Runs after the primary verdict is already computed above and can never
     # change it — `risk` and `status` were captured from `result` before this
@@ -266,6 +274,96 @@ async def _analyse_with_engine(case_db_id: str, file_path: str,
         print(f"[Analyser] srm supplementary pass failed (non-fatal): {exc}")
 
     return (risk, risk, status, rows)
+
+
+async def _fuse_audio_visual(case_db_id: str, file_path: str,
+                             visual: EngineResult, rows: list[dict]
+                             ) -> tuple[float, str]:
+    """Run the audio engine on the video's soundtrack, fuse it with the visual
+    result, and rewrite `rows` so the fused row is the case's summary.
+
+    Returns the fused (risk, status). Never raises: if the audio pass fails
+    the fusion falls back to the visual stream alone and says why.
+    """
+    from app.services.fusion import AUDIO_EXPERIMENTAL_RELIABILITY, Stream, fuse
+
+    audio: EngineResult | None = None
+    audio_note = ""
+    engine = get_registry().get("audio")
+    if engine is None:
+        audio_note = "no audio engine registered"
+    else:
+        try:
+            audio = await asyncio.get_event_loop().run_in_executor(
+                None, engine.analyze,
+                EngineInput(media_key=case_db_id, modality="audio",
+                            artifact_path=file_path, task_id=case_db_id))
+        except Exception as exc:  # noqa: BLE001
+            audio_note = f"audio engine failed: {exc}"
+    if audio is not None and audio.confidence <= 0:
+        audio_note = (audio.error or audio.evidence.get("note")
+                      or "no soundtrack or no audio model")
+
+    experimental = bool(audio and audio.evidence.get("experimental"))
+    v_stream = Stream("visual", visual.fake_prob, visual.confidence)
+    a_stream = Stream(
+        "audio",
+        audio.fake_prob if audio else float("nan"),
+        audio.confidence if audio else 0.0,
+        AUDIO_EXPERIMENTAL_RELIABILITY if experimental else 1.0,
+        audio_note[:200],
+    )
+    fused = fuse(v_stream, a_stream)
+
+    # The visual summary row becomes a per-stream (secondary) row; the
+    # checkpoint rows stay as they are.
+    for r in rows:
+        d = json.loads(r["details"])
+        if d.get("tier") == "summary":
+            d.update(tier="secondary", signal="visual_stream")
+            r["details"] = json.dumps(d)
+            r["model_name"] = "Video frames (visual stream)"
+    if audio is not None and audio.confidence > 0:
+        a_row = _engine_result_row(case_db_id, "Soundtrack (audio stream)", audio)
+        d = json.loads(a_row["details"])
+        d.update(tier="secondary", signal="audio_stream")
+        a_row["details"] = json.dumps(d)
+        rows.append(a_row)
+
+    # The fused row keeps the visual evidence (artifact map, face count,
+    # threshold) so the console and PDF render exactly as before.
+    details = {
+        "tier": "summary",
+        "modality": "visual",
+        "fake_prob": round(fused.fake_prob, 4),
+        "real_prob": round(1 - fused.fake_prob, 4),
+        "confidence": fused.confidence,
+        "model_version": f"{visual.model_version}+audio-fusion",
+        **{k: v for k, v in visual.evidence.items() if k != "per_checkpoint"},
+        "rationale": fused.rationale,
+        "policy": "audio_visual_max_weighted",
+        "manipulation_type": fused.manipulation_type,
+        "deciding_stream": fused.deciding_stream,
+        "streams": fused.streams,
+    }
+    if fused.confidence <= 0:
+        label = "INCONCLUSIVE"
+    else:
+        label = "SYNTHETIC" if fused.fake_prob >= 0.5 else "AUTHENTIC"
+    rows.append({
+        "id": str(uuid.uuid4()),
+        "case_id": case_db_id,
+        "model_name": "Audio-Visual Fusion (fused)",
+        "confidence": round(fused.fake_prob * 100, 2),
+        "label": label,
+        "details": json.dumps(details),
+    })
+
+    risk = round(fused.fake_prob * 100, 2)
+    status = _status(fused.fake_prob) if fused.confidence > 0 else "inconclusive"
+    print(f"[Analyser] fusion — {fused.manipulation_type}  risk={risk:.1f}%  "
+          f"status={status}  deciding={fused.deciding_stream}")
+    return risk, status
 
 
 # ─────────────────────────────────────────────────────────────────────────────
