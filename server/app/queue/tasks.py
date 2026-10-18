@@ -539,6 +539,27 @@ def _run(case_db_id: str, media_type: str, file_path: str):
 # Introspection used by /api/queue
 # ─────────────────────────────────────────────────────────────────────────────
 
+_SNAPSHOT_TTL = 5.0
+_snapshot_cache: tuple[float, dict] | None = None
+
+
+def cached_worker_snapshot() -> dict:
+    """worker_snapshot(), reused for a few seconds.
+
+    The control-channel inspect waits out its timeout three times when no
+    worker answers, so an uncached call costs seconds. The console polls
+    health and queue every few seconds from every open tab; without the cache
+    each poll would pay that again.
+    """
+    global _snapshot_cache
+    now = time.monotonic()
+    if _snapshot_cache and now - _snapshot_cache[0] < _SNAPSHOT_TTL:
+        return _snapshot_cache[1]
+    snap = worker_snapshot()
+    _snapshot_cache = (now, snap)
+    return snap
+
+
 def worker_snapshot() -> dict:
     """Live worker census, straight from Celery's control API.
 

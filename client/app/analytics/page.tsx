@@ -40,7 +40,9 @@ import { Button } from "@/app/components/ui/button";
 import { useCases, useStats } from "@/app/hooks/use-cases";
 import { VERDICT, type Case, type CaseStatus } from "@/app/shared/schema";
 
-const CHART_MAX = 200;
+// GET /cases caps page_size at 100; asking for more returns 422 and left
+// every chart on this page empty.
+const CHART_MAX = 100;
 
 export default function AnalyticsPage() {
   const { data: stats, isLoading: statsLoading } = useStats();
@@ -72,9 +74,9 @@ export default function AnalyticsPage() {
     const counts: Record<string, number> = { video: 0, image: 0, audio: 0 };
     cases.forEach((c) => (counts[c.mediaType] += 1));
     return [
-      { name: "Video", value: counts.video, fill: "#6366f1" },
-      { name: "Image", value: counts.image, fill: "#a855f7" },
-      { name: "Audio", value: counts.audio, fill: "#38bdf8" },
+      { name: "Video", value: counts.video, fill: "#22d3ee" },
+      { name: "Image", value: counts.image, fill: "#8190a8" },
+      { name: "Audio", value: counts.audio, fill: "#e6eaf2" },
     ].filter((s) => s.value > 0);
   }, [cases]);
 
@@ -166,20 +168,20 @@ export default function AnalyticsPage() {
                     <BarChart data={riskHistogram} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
                       <XAxis
                         dataKey="band"
-                        tick={{ fill: "#64748b", fontSize: 10, fontFamily: "monospace" }}
-                        axisLine={{ stroke: "#1e293b" }}
+                        tick={{ fill: "#67758f", fontSize: 10, fontFamily: "monospace" }}
+                        axisLine={{ stroke: "#1d2536" }}
                         tickLine={false}
                       />
                       <YAxis
                         allowDecimals={false}
-                        tick={{ fill: "#64748b", fontSize: 10, fontFamily: "monospace" }}
+                        tick={{ fill: "#67758f", fontSize: 10, fontFamily: "monospace" }}
                         axisLine={false}
                         tickLine={false}
                       />
                       <Tooltip
-                        cursor={{ fill: "rgba(99,102,241,0.08)" }}
+                        cursor={{ fill: "rgba(34,211,238,0.08)" }}
                         contentStyle={tooltipStyle}
-                        labelStyle={{ color: "#94a3b8", fontSize: 11 }}
+                        labelStyle={{ color: "#8190a8", fontSize: 11 }}
                         formatter={(v) => [`${v ?? 0} case${v === 1 ? "" : "s"}`, "Count"] as [string, string]}
                       />
                       <Bar dataKey="count" radius={[4, 4, 0, 0]}>
@@ -261,17 +263,17 @@ export default function AnalyticsPage() {
                     </defs>
                     <XAxis
                       dataKey="label"
-                      tick={{ fill: "#64748b", fontSize: 10, fontFamily: "monospace" }}
-                      axisLine={{ stroke: "#1e293b" }}
+                      tick={{ fill: "#67758f", fontSize: 10, fontFamily: "monospace" }}
+                      axisLine={{ stroke: "#1d2536" }}
                       tickLine={false}
                     />
                     <YAxis
                       allowDecimals={false}
-                      tick={{ fill: "#64748b", fontSize: 10, fontFamily: "monospace" }}
+                      tick={{ fill: "#67758f", fontSize: 10, fontFamily: "monospace" }}
                       axisLine={false}
                       tickLine={false}
                     />
-                    <Tooltip contentStyle={tooltipStyle} labelStyle={{ color: "#94a3b8", fontSize: 11 }} />
+                    <Tooltip contentStyle={tooltipStyle} labelStyle={{ color: "#8190a8", fontSize: 11 }} />
                     {(["authentic", "inconclusive", "manipulated"] as CaseStatus[]).map((k) => (
                       <Area
                         key={k}
@@ -298,8 +300,8 @@ export default function AnalyticsPage() {
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
 
 const tooltipStyle = {
-  backgroundColor: "#0f172a",
-  border: "1px solid #1e293b",
+  backgroundColor: "#121a2a",
+  border: "1px solid #1d2536",
   borderRadius: 8,
   fontSize: 12,
   color: "#e2e8f0",

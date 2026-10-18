@@ -192,6 +192,19 @@ export const casesApi = {
    * `onProgress` reports upload progress only (0–100), which is why this one
    * endpoint uses XHR rather than fetch — fetch has no upload progress event.
    */
+  /**
+   * POST /cases with `media_url` — the server downloads the media itself
+   * (and answers instantly if it has seen that URL's bytes before).
+   */
+  createFromUrl(payload: { title: string; mediaType: MediaType; mediaUrl: string; userId?: string }): Promise<Case> {
+    const form = new FormData();
+    form.append("title", payload.title);
+    form.append("media_type", payload.mediaType);
+    form.append("media_url", payload.mediaUrl);
+    if (payload.userId) form.append("user_id", payload.userId);
+    return request(`/cases`, { method: "POST", body: form }, (raw) => CaseSchema.parse(raw));
+  },
+
   create(payload: CreateCasePayload, onProgress?: (percent: number) => void): Promise<Case> {
     const form = new FormData();
     form.append("title", payload.title);

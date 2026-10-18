@@ -44,12 +44,12 @@ const contextValid = (): boolean =>
    and the web app never disagree about what a score means. */
 
 const PALETTE: Record<string, { fg: string; bg: string; border: string; text: string }> = {
-  idle: { fg: '#c7d2fe', bg: 'rgba(67,56,202,0.92)', border: '#6366f1', text: 'Verify' },
-  processing: { fg: '#fff', bg: 'rgba(2,132,199,0.94)', border: '#38bdf8', text: 'Analysing' },
+  idle: { fg: '#ecfeff', bg: 'rgba(14,116,144,0.92)', border: '#22d3ee', text: 'Verify' },
+  processing: { fg: '#fff', bg: 'rgba(79,70,229,0.94)', border: '#818cf8', text: 'Analysing' },
   authentic: { fg: '#fff', bg: 'rgba(4,120,87,0.94)', border: '#34d399', text: 'Authentic' },
   manipulated: { fg: '#fff', bg: 'rgba(185,28,28,0.94)', border: '#f87171', text: 'Manipulated' },
   inconclusive: { fg: '#fff', bg: 'rgba(180,83,9,0.94)', border: '#fbbf24', text: 'Inconclusive' },
-  failed: { fg: '#e2e8f0', bg: 'rgba(51,65,85,0.94)', border: '#94a3b8', text: 'Failed' },
+  failed: { fg: '#e6eaf2', bg: 'rgba(46,56,76,0.94)', border: '#8190a8', text: 'Failed' },
 };
 
 function paint(badge: HTMLButtonElement, key: string, label: string, title?: string): void {

@@ -4,7 +4,9 @@ from fastapi import APIRouter, Depends
 from app.models import HealthResponse
 from app.database import DB_PATH, get_db
 from app.queue.redis_client import ping
-from app.queue.tasks import worker_snapshot
+from starlette.concurrency import run_in_threadpool
+
+from app.queue.tasks import cached_worker_snapshot
 from app.security import ratelimit
 import os
 
@@ -33,7 +35,9 @@ async def health():
     # only the database would call the service healthy while it is unable to
     # accept a single case.
     redis_ok = ping()
-    workers = worker_snapshot() if redis_ok else {"online": 0}
+    # Off the event loop: the inspect blocks for seconds when no worker
+    # answers, and on the loop that stalled every other request with it.
+    workers = (await run_in_threadpool(cached_worker_snapshot)) if redis_ok else {"online": 0}
 
     if db_status != "ok" or not redis_ok:
         overall = "degraded"

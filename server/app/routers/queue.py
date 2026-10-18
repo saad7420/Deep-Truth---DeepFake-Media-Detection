@@ -30,7 +30,9 @@ from fastapi.responses import StreamingResponse
 from app.database import get_db
 from app.queue import cache, state
 from app.queue.redis_client import get_client, ping
-from app.queue.tasks import active_jobs, worker_snapshot
+from starlette.concurrency import run_in_threadpool
+
+from app.queue.tasks import active_jobs, cached_worker_snapshot
 from app.security import ratelimit
 
 log = logging.getLogger(__name__)
@@ -75,7 +77,7 @@ async def queue_overview():
             "message": "Redis is not reachable; uploads will be rejected with 503.",
         }
 
-    workers = worker_snapshot()
+    workers = await run_in_threadpool(cached_worker_snapshot)
     depth = state.pending_depth()
 
     message = None
@@ -90,7 +92,7 @@ async def queue_overview():
         "redisOnline": True,
         "pendingDepth": depth,
         "workers": workers,
-        "activeJobs": active_jobs(),
+        "activeJobs": await run_in_threadpool(active_jobs),
         "cache": cache.stats(),
         "message": message,
     }
@@ -265,7 +267,7 @@ async def queue_stream(request: Request, case_id: Optional[str] = Query(None)):
             else:
                 yield _sse("snapshot", {
                     "pendingDepth": state.pending_depth(),
-                    "workers": worker_snapshot(),
+                    "workers": await run_in_threadpool(cached_worker_snapshot),
                 })
 
             started = asyncio.get_event_loop().time()

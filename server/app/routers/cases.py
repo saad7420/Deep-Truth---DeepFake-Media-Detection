@@ -583,6 +583,11 @@ async def get_stats():
                 SUM(CASE WHEN status='authentic'   THEN 1 ELSE 0 END) AS authentic,
                 SUM(CASE WHEN status='manipulated' THEN 1 ELSE 0 END) AS manipulated,
                 SUM(CASE WHEN status='processing'  THEN 1 ELSE 0 END) AS processing,
+                SUM(CASE WHEN status='inconclusive' THEN 1 ELSE 0 END) AS inconclusive,
+                SUM(CASE WHEN status='failed'      THEN 1 ELSE 0 END) AS failed,
+                SUM(CASE WHEN media_type='image'   THEN 1 ELSE 0 END) AS images,
+                SUM(CASE WHEN media_type='video'   THEN 1 ELSE 0 END) AS videos,
+                SUM(CASE WHEN media_type='audio'   THEN 1 ELSE 0 END) AS audios,
                 AVG(risk_score) AS avg_risk
             FROM cases
             """
@@ -596,5 +601,12 @@ async def get_stats():
         "authentic": r["authentic"] or 0,
         "manipulated": r["manipulated"] or 0,
         "processing": r["processing"] or 0,
+        "inconclusive": r["inconclusive"] or 0,
+        "failed": r["failed"] or 0,
+        "byMediaType": {
+            "image": r["images"] or 0,
+            "video": r["videos"] or 0,
+            "audio": r["audios"] or 0,
+        },
         "avgRiskScore": round(r["avg_risk"] or 0, 1),
     }
