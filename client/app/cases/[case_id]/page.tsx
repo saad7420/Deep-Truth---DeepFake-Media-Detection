@@ -199,7 +199,9 @@ export default function CaseReportPage() {
               )}
             </div>
 
-            <h1 className="font-display text-2xl font-bold tracking-tight text-white lg:text-3xl">
+            {/* Titles are often raw filenames with no spaces; let them wrap
+                anywhere so they never run under the risk dial. */}
+            <h1 className="font-display text-2xl font-bold tracking-tight text-white [overflow-wrap:anywhere] lg:text-3xl">
               {c.title}
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">{meta.summary}</p>
@@ -401,7 +403,7 @@ function RiskDial({ value, pending, hex }: { value: number; pending: boolean; he
   return (
     <div className="relative flex h-36 w-36 items-center justify-center">
       <svg viewBox="0 0 128 128" className="h-full w-full -rotate-90">
-        <circle cx="64" cy="64" r={radius} fill="none" stroke="#1e293b" strokeWidth="9" />
+        <circle cx="64" cy="64" r={radius} fill="none" stroke="#1d2536" strokeWidth="9" />
         {!pending && (
           <circle
             cx="64"

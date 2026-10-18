@@ -319,8 +319,8 @@ fi
 step "6. Model weights"
 
 count_adapters() { find "$1" -maxdepth 2 -name adapter_config.json 2>/dev/null | wc -l | tr -d ' '; }
-V="$(count_adapters "$REPO_ROOT/videos_checkpoints")"
-I="$(count_adapters "$REPO_ROOT/images_checkpoints")"
+V="$(count_adapters "$REPO_ROOT/checkpoints/videos_checkpoints")"
+I="$(count_adapters "$REPO_ROOT/checkpoints/images_checkpoints")"
 [[ "$V" -gt 0 ]] && ok "video: $V adapters"  || { bad "no video adapters in videos_checkpoints/"; MISSING=1; }
 [[ "$I" -gt 0 ]] && ok "image: $I adapters"  || { bad "no image adapters in images_checkpoints/"; MISSING=1; }
 

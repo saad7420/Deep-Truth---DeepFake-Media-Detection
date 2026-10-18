@@ -42,6 +42,7 @@ import app.utils.env  # noqa: F401  — load server/.env in the worker too
 
 from celery import Task
 from celery.exceptions import SoftTimeLimitExceeded
+from celery.signals import worker_ready
 
 from app.queue import cache, state
 from app.queue.celery_app import celery_app
@@ -538,6 +539,27 @@ def _run(case_db_id: str, media_type: str, file_path: str):
 # Introspection used by /api/queue
 # ─────────────────────────────────────────────────────────────────────────────
 
+_SNAPSHOT_TTL = 5.0
+_snapshot_cache: tuple[float, dict] | None = None
+
+
+def cached_worker_snapshot() -> dict:
+    """worker_snapshot(), reused for a few seconds.
+
+    The control-channel inspect waits out its timeout three times when no
+    worker answers, so an uncached call costs seconds. The console polls
+    health and queue every few seconds from every open tab; without the cache
+    each poll would pay that again.
+    """
+    global _snapshot_cache
+    now = time.monotonic()
+    if _snapshot_cache and now - _snapshot_cache[0] < _SNAPSHOT_TTL:
+        return _snapshot_cache[1]
+    snap = worker_snapshot()
+    _snapshot_cache = (now, snap)
+    return snap
+
+
 def worker_snapshot() -> dict:
     """Live worker census, straight from Celery's control API.
 
@@ -559,6 +581,17 @@ def worker_snapshot() -> dict:
     concurrency = sum(
         (s.get("pool", {}) or {}).get("max-concurrency", 0) for s in stats_.values()
     )
+
+    # Celery's control channel (pub/sub broadcast) finds nobody on Redis
+    # servers that do not implement it, and can time out while a solo worker
+    # is busy inside a long task. The heartbeat keys each worker publishes
+    # itself are the fallback, so a worker that is running is never reported
+    # offline.
+    if not names:
+        beats = _heartbeats()
+        if beats:
+            names = sorted(beats)
+            concurrency = sum(beats.values())
     return {
         "online": len(names),
         "names": names,
@@ -567,6 +600,49 @@ def worker_snapshot() -> dict:
         "concurrency": concurrency,
         "reachable": True,
     }
+
+
+HEARTBEAT_INTERVAL = 10
+HEARTBEAT_TTL = 30
+
+
+def _heartbeats() -> dict[str, int]:
+    """{worker name: concurrency} for every worker with a live heartbeat key."""
+    from app.queue.redis_client import get_client, key
+    out: dict[str, int] = {}
+    try:
+        client = get_client()
+        for k in client.scan_iter(match=key("worker", "*"), count=100):
+            raw = client.get(k)
+            if raw is not None:
+                out[k.split(":", 2)[2]] = int(raw or 1)
+    except Exception:  # noqa: BLE001 — health must never raise
+        return {}
+    return out
+
+
+def _start_heartbeat(hostname: str, concurrency: int) -> None:
+    """Publish this worker's liveness to Redis until the process exits."""
+    import threading
+    from app.queue.redis_client import get_client, key
+
+    def beat() -> None:
+        while True:
+            try:
+                get_client().setex(key("worker", hostname), HEARTBEAT_TTL,
+                                   concurrency)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("worker heartbeat failed: %s", exc)
+            time.sleep(HEARTBEAT_INTERVAL)
+
+    threading.Thread(target=beat, name="worker-heartbeat", daemon=True).start()
+
+
+@worker_ready.connect
+def _on_worker_ready(sender=None, **_kw) -> None:
+    pool = getattr(sender, "pool", None)
+    _start_heartbeat(getattr(sender, "hostname", "worker"),
+                     int(getattr(pool, "limit", 1) or 1))
 
 
 def active_jobs() -> list[dict]:

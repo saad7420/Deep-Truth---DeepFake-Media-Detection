@@ -213,6 +213,12 @@ export const DashboardStatsSchema = z.object({
   authentic: z.number(),
   manipulated: z.number(),
   processing: z.number(),
+  // Defaults keep the console working against a backend that predates them.
+  inconclusive: z.number().default(0),
+  failed: z.number().default(0),
+  byMediaType: z
+    .object({ image: z.number(), video: z.number(), audio: z.number() })
+    .default({ image: 0, video: 0, audio: 0 }),
   avgRiskScore: z.number(),
 });
 
@@ -307,7 +313,7 @@ export const VERDICT: Record<CaseStatus, VerdictMeta> = {
     bg: "bg-sky-500/10",
     border: "border-sky-500/20",
     ring: "ring-sky-500/30",
-    hex: "#38bdf8",
+    hex: "#818cf8",
   },
   authentic: {
     label: "Authentic",
@@ -343,7 +349,7 @@ export const VERDICT: Record<CaseStatus, VerdictMeta> = {
     bg: "bg-slate-500/10",
     border: "border-slate-500/20",
     ring: "ring-slate-500/30",
-    hex: "#94a3b8",
+    hex: "#8190a8",
   },
 };
 

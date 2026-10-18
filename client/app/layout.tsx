@@ -1,28 +1,22 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, Space_Grotesk } from "next/font/google";
+import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import "./globals.css";
 import Providers from "./components/providers";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+/* IBM Plex: an engineering typeface with a technical-document character,
+   which suits a forensic instrument better than a consumer UI face. Sans
+   carries headings and prose; Mono carries every score, hash and case id. */
+const plexSans = IBM_Plex_Sans({
+  variable: "--font-plex-sans",
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
   display: "swap",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const plexMono = IBM_Plex_Mono({
+  variable: "--font-plex-mono",
   subsets: ["latin"],
-  display: "swap",
-});
-
-/* Display face. Space Grotesk's squared terminals and single-storey `a`
-   read as instrument panel rather than marketing page — it carries the
-   forensic-console personality that Geist alone doesn't. Used only for
-   headings and verdicts, never body copy. */
-const spaceGrotesk = Space_Grotesk({
-  variable: "--font-space-grotesk",
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
+  weight: ["400", "500", "600"],
   display: "swap",
 });
 
@@ -39,7 +33,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#020617",
+  themeColor: "#0a101d",
   width: "device-width",
   initialScale: 1,
 };
@@ -53,7 +47,7 @@ export default function RootLayout({
     <html
       lang="en"
       data-scroll-behavior="smooth"
-      className={`${geistSans.variable} ${geistMono.variable} ${spaceGrotesk.variable}`}
+      className={`${plexSans.variable} ${plexMono.variable}`}
       suppressHydrationWarning
     >
       <body className="bg-slate-950 text-slate-100 antialiased">

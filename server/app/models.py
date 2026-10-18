@@ -120,6 +120,10 @@ class DashboardStats(BaseModel):
     authentic: int
     manipulated: int
     processing: int
+    inconclusive: int = 0
+    failed: int = 0
+    #: {"image": n, "video": n, "audio": n}
+    by_media_type: dict[str, int] = Field(default_factory=dict, alias="byMediaType")
     avg_risk_score: float = Field(alias="avgRiskScore")
 
     model_config = {"populate_by_name": True}

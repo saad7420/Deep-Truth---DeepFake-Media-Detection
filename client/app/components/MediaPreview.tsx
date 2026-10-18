@@ -59,8 +59,10 @@ export function MediaPreview({
   return (
     <figure
       className={cn(
-        "relative overflow-hidden rounded-xl border border-slate-800 bg-slate-950",
-        analysing && "scanline",
+        "relative overflow-hidden rounded-lg border border-slate-800 bg-slate-950",
+        // Both effects draw with pseudo-elements, so they take turns: the
+        // scan sweep while analysing, the evidence brackets once settled.
+        analysing ? "scanline" : "reticle",
         className,
       )}
     >

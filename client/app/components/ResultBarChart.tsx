@@ -221,7 +221,7 @@ export function ResultBarChart({
           <ConfidenceBar
             label="Synthetic likelihood"
             value={syntheticLikelihood}
-            barClass="bg-gradient-to-r from-purple-600 to-purple-400"
+            barClass="bg-gradient-to-r from-indigo-600 to-indigo-400"
             delay={120}
           />
         </div>

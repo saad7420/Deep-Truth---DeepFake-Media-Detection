@@ -1,67 +1,122 @@
 @import "tailwindcss";
 
 /* ============================================================================
-   DEEP TRUTH — DESIGN SYSTEM
-   Forensic console aesthetic: deep slate substrate, indigo command accent,
-   semantic verdict colours (emerald / amber / red / sky).
+   DEEP TRUTH — FORENSIC LAB DESIGN SYSTEM
+   A digital-forensics instrument, not a sci-fi dashboard: deep navy ink,
+   one signal-cyan accent for interaction, monospace for every measurement,
+   and verdict colours reserved strictly for outcomes.
+
+   The default Tailwind `indigo`, `slate` and `sky` palettes are redefined
+   below, so every existing `bg-indigo-600` / `text-slate-400` in the app
+   picks up the new identity without touching each component:
+     indigo = the accent, slate = the neutral ink, sky = processing state.
    ========================================================================= */
 
 @theme {
   /* ── Typeface roles ──────────────────────────────────────────────────── */
-  --font-display: var(--font-space-grotesk), "Geist", ui-sans-serif, system-ui, sans-serif;
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), "JetBrains Mono", ui-monospace, monospace;
+  --font-display: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, "SFMono-Regular", monospace;
 
-  /* ── Brand ───────────────────────────────────────────────────────────── */
-  --color-brand-50:  #eef2ff;
-  --color-brand-300: #a5b4fc;
-  --color-brand-400: #818cf8;
-  --color-brand-500: #6366f1;
-  --color-brand-600: #4f46e5;
-  --color-brand-700: #4338ca;
+  /* ── Accent: signal cyan (replaces indigo) ──────────────────────────────
+     600/700 sit a step deeper than stock cyan so white button text keeps
+     AA contrast (#0e7490 behind white text is 5.4:1). */
+  --color-indigo-50:  #ecfeff;
+  --color-indigo-100: #cffafe;
+  --color-indigo-200: #a5f3fc;
+  --color-indigo-300: #67e8f9;
+  --color-indigo-400: #22d3ee;
+  --color-indigo-500: #0891b2;
+  --color-indigo-600: #0e7490;
+  --color-indigo-700: #155e75;
+  --color-indigo-800: #164e63;
+  --color-indigo-900: #123f52;
+  --color-indigo-950: #082f3e;
+
+  /* ── Neutral ink: navy (replaces slate) ─────────────────────────────── */
+  --color-slate-50:  #f4f6fa;
+  --color-slate-100: #e6eaf2;
+  --color-slate-200: #cdd5e3;
+  --color-slate-300: #a6b2c6;
+  --color-slate-400: #8190a8;
+  --color-slate-500: #67758f;
+  --color-slate-600: #445068;
+  --color-slate-700: #2e384c;
+  --color-slate-800: #1d2536;
+  --color-slate-900: #121a2a;
+  --color-slate-950: #0a101d;
+
+  /* ── Processing state: soft violet (replaces sky, which is too close to
+     the cyan accent to read as a separate state) ─────────────────────── */
+  --color-sky-100: #e0e7ff;
+  --color-sky-200: #c7d2fe;
+  --color-sky-300: #a5b4fc;
+  --color-sky-400: #818cf8;
+  --color-sky-500: #6366f1;
+  --color-sky-600: #4f46e5;
+  --color-sky-700: #4338ca;
+  --color-sky-800: #3730a3;
+  --color-sky-900: #312e81;
+  --color-sky-950: #1e1b4b;
+
+  /* ── Brand aliases ───────────────────────────────────────────────────── */
+  --color-brand-50:  #ecfeff;
+  --color-brand-300: #67e8f9;
+  --color-brand-400: #22d3ee;
+  --color-brand-500: #0891b2;
+  --color-brand-600: #0e7490;
+  --color-brand-700: #155e75;
 
   /* ── Verdict semantics — one colour per forensic outcome ─────────────── */
-  --color-verdict-authentic:    #34d399;  /* emerald-400  */
-  --color-verdict-inconclusive: #fbbf24;  /* amber-400    */
-  --color-verdict-manipulated:  #f87171;  /* red-400      */
-  --color-verdict-processing:   #38bdf8;  /* sky-400      */
-  --color-verdict-failed:       #94a3b8;  /* slate-400    */
+  --color-verdict-authentic:    #34d399;  /* emerald-400 */
+  --color-verdict-inconclusive: #fbbf24;  /* amber-400   */
+  --color-verdict-manipulated:  #f87171;  /* red-400     */
+  --color-verdict-processing:   #818cf8;  /* violet      */
+  --color-verdict-failed:       #8190a8;  /* ink-400     */
+
+  /* ── Paper: the light editorial sections of the public landing page ──── */
+  --color-paper:       #f6f5f1;
+  --color-paper-line:  #e4e2db;
+  --color-paper-ink:   #111827;
+  --color-paper-mute:  #5b6476;
+  --color-paper-accent: #0e7490;
 
   /* ── Substrate ───────────────────────────────────────────────────────── */
-  --color-substrate:  #020617;  /* slate-950 — page base   */
-  --color-surface:    #0f172a;  /* slate-900 — card base   */
-  --color-hairline:   #1e293b;  /* slate-800 — borders     */
+  --color-substrate:  #0a101d;
+  --color-surface:    #121a2a;
+  --color-hairline:   #1d2536;
 }
 
 /* ── Root variables ─────────────────────────────────────────────────────── */
 :root {
-  --background: #020617;
-  --foreground: #f8fafc;
+  --background: #0a101d;
+  --foreground: #f4f6fa;
 
-  --radius: 0.75rem;
+  /* Instrument-like: tighter corners than a consumer app. */
+  --radius: 0.5rem;
 
-  /* Console glow — used on primary actions and active nav state */
-  --glow-brand: 0 0 24px rgba(79, 70, 229, 0.35);
-  --glow-brand-strong: 0 0 40px rgba(79, 70, 229, 0.45);
+  /* Accent glow — primary actions and the active nav item only */
+  --glow-brand: 0 0 0 1px rgba(34, 211, 238, 0.25), 0 0 20px rgba(34, 211, 238, 0.18);
+  --glow-brand-strong: 0 0 0 1px rgba(34, 211, 238, 0.4), 0 0 32px rgba(34, 211, 238, 0.28);
 
   /* shadcn/ui token bridge (dark-only product) */
-  --card: #0f172a;
-  --card-foreground: #f8fafc;
-  --popover: #0f172a;
-  --popover-foreground: #f8fafc;
-  --primary: #4f46e5;
+  --card: #121a2a;
+  --card-foreground: #f4f6fa;
+  --popover: #121a2a;
+  --popover-foreground: #f4f6fa;
+  --primary: #0e7490;
   --primary-foreground: #ffffff;
-  --secondary: #1e293b;
-  --secondary-foreground: #e2e8f0;
-  --muted: #1e293b;
-  --muted-foreground: #94a3b8;
-  --accent: #1e293b;
-  --accent-foreground: #f8fafc;
+  --secondary: #1d2536;
+  --secondary-foreground: #e6eaf2;
+  --muted: #1d2536;
+  --muted-foreground: #8190a8;
+  --accent: #1d2536;
+  --accent-foreground: #f4f6fa;
   --destructive: #dc2626;
   --destructive-foreground: #ffffff;
-  --border: #1e293b;
-  --input: #1e293b;
-  --ring: #6366f1;
+  --border: #1d2536;
+  --input: #1d2536;
+  --ring: #22d3ee;
 }
 
 /* ── Base ───────────────────────────────────────────────────────────────── */
@@ -78,20 +133,20 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
-  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 ::selection {
-  background: rgba(99, 102, 241, 0.3);
+  background: rgba(34, 211, 238, 0.28);
   color: #fff;
 }
 
 /* ── Typography utilities ───────────────────────────────────────────────── */
 .font-display {
   font-family: var(--font-display);
-  letter-spacing: -0.02em;
+  font-weight: 600;
+  letter-spacing: -0.015em;
 }
 
 /* Small uppercase label used above section titles and on data captions.
@@ -102,8 +157,8 @@ body {
   line-height: 1;
   font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: #64748b;
+  letter-spacing: 0.16em;
+  color: #67758f;
 }
 
 /* Tabular figures for every score, percentage and count in the product. */
@@ -112,46 +167,89 @@ body {
   font-family: var(--font-mono);
 }
 
-/* ── Signature: the forensic grid substrate ─────────────────────────────── */
+/* ── Signature: lab graph paper ─────────────────────────────────────────────
+   A fine 24px grid with a stronger line every 120px, like the measurement
+   paper under an evidence photo. Faint enough to never compete with data. */
 .grid-bg {
   background-image:
-    linear-gradient(to right, rgba(148, 163, 184, 0.055) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(148, 163, 184, 0.055) 1px, transparent 1px);
-  background-size: 48px 48px;
+    linear-gradient(to right, rgba(34, 211, 238, 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(34, 211, 238, 0.045) 1px, transparent 1px),
+    linear-gradient(to right, rgba(129, 144, 168, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(129, 144, 168, 0.035) 1px, transparent 1px);
+  background-size: 120px 120px, 120px 120px, 24px 24px, 24px 24px;
   background-position: center center;
 }
 
-/* Ambient indigo bloom behind page headers. */
+/* Ambient cyan wash behind page headers. */
 .aurora {
   background-image: radial-gradient(
-    ellipse 80% 50% at 50% -20%,
-    rgba(99, 102, 241, 0.14),
+    ellipse 70% 45% at 50% -15%,
+    rgba(34, 211, 238, 0.10),
     transparent 70%
   );
 }
 
 .neon-text {
-  text-shadow: 0 0 28px rgba(129, 140, 248, 0.45);
+  text-shadow: 0 0 24px rgba(34, 211, 238, 0.35);
 }
 
 .glow-brand { box-shadow: var(--glow-brand); }
 .glow-brand-strong { box-shadow: var(--glow-brand-strong); }
 
-/* Frosted console panel */
+/* Instrument panel: solid ink surface with a faint top highlight. */
 .panel {
-  background-color: rgba(15, 23, 42, 0.5);
+  background-color: rgba(18, 26, 42, 0.72);
   border: 1px solid var(--color-hairline);
-  backdrop-filter: blur(12px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  backdrop-filter: blur(10px);
   border-radius: var(--radius);
 }
 
 .panel-hover {
-  transition: border-color 200ms ease, background-color 200ms ease;
+  transition: border-color 160ms ease, background-color 160ms ease;
 }
 .panel-hover:hover {
-  border-color: rgba(99, 102, 241, 0.4);
-  background-color: rgba(15, 23, 42, 0.7);
+  border-color: rgba(34, 211, 238, 0.35);
+  background-color: rgba(18, 26, 42, 0.9);
 }
+
+/* Evidence reticle: corner brackets around media under examination. */
+.reticle { position: relative; }
+.reticle::before,
+.reticle::after {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+  border-color: rgba(34, 211, 238, 0.7);
+  z-index: 2;
+}
+.reticle::before { top: 6px; left: 6px; border-top: 1.5px solid; border-left: 1.5px solid; }
+.reticle::after { bottom: 6px; right: 6px; border-bottom: 1.5px solid; border-right: 1.5px solid; }
+
+/* ── Landing hero: illustrated real-vs-fake comparison ──────────────────────
+   Pure CSS so the page ships no stock photography of real people. */
+.lp-frame { position: relative; aspect-ratio: 4 / 5; overflow: hidden; border-radius: 8px;
+  background: linear-gradient(160deg, #1f3346, #0e1a28); }
+.lp-face { position: absolute; left: 50%; top: 44%; width: 52%; aspect-ratio: 3 / 4;
+  transform: translate(-50%, -50%); border-radius: 48% 48% 44% 44%;
+  background: linear-gradient(180deg, #d7b49a, #a77d62); }
+.lp-shoulders { position: absolute; left: 50%; bottom: -10%; width: 110%; height: 38%;
+  transform: translateX(-50%); border-radius: 50% 50% 0 0; background: #2b4258; }
+.lp-fake .lp-face { background: linear-gradient(180deg, #e3c0a6, #b58a6c); filter: saturate(1.25); }
+.lp-heat { position: absolute; left: 30%; top: 24%; width: 40%; height: 40%; border-radius: 50%;
+  background: radial-gradient(circle, rgba(239, 68, 68, 0.55), rgba(239, 68, 68, 0) 70%); }
+.lp-box { position: absolute; inset: 14% 18% 30%; border: 2px solid; }
+.lp-box > span { position: absolute; top: -22px; left: -2px; padding: 3px 7px; color: #fff;
+  font: 600 11px var(--font-mono); letter-spacing: 0.08em; }
+.lp-real .lp-box { border-color: #10b981; } .lp-real .lp-box > span { background: #059669; }
+.lp-fake .lp-box { border-color: #ef4444; } .lp-fake .lp-box > span { background: #dc2626; }
+.lp-hero-grid { background-image:
+    linear-gradient(to right, rgba(34, 211, 238, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(34, 211, 238, 0.05) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse at 70% 40%, #000 30%, transparent 75%); }
 
 /* ── Scanline sweep — used only on media under active analysis ──────────── */
 @keyframes scan {
@@ -165,8 +263,8 @@ body {
   position: absolute;
   inset-inline: 0;
   height: 2px;
-  background: linear-gradient(90deg, transparent, #818cf8, transparent);
-  box-shadow: 0 0 14px 2px rgba(129, 140, 248, 0.6);
+  background: linear-gradient(90deg, transparent, #22d3ee, transparent);
+  box-shadow: 0 0 12px 2px rgba(34, 211, 238, 0.5);
   animation: scan 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
@@ -180,9 +278,9 @@ body {
 }
 
 @keyframes pulse-ring {
-  0%   { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.5); }
-  70%  { box-shadow: 0 0 0 10px rgba(99, 102, 241, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
+  0%   { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.45); }
+  70%  { box-shadow: 0 0 0 10px rgba(34, 211, 238, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0); }
 }
 .animate-pulse-ring { animation: pulse-ring 2s infinite; }
 
@@ -224,13 +322,13 @@ body {
 
 /* ── Scrollbar ──────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: #020617; }
+::-webkit-scrollbar-track { background: #0a101d; }
 ::-webkit-scrollbar-thumb {
-  background: #1e293b;
+  background: #1d2536;
   border-radius: 6px;
-  border: 2px solid #020617;
+  border: 2px solid #0a101d;
 }
-::-webkit-scrollbar-thumb:hover { background: #334155; }
+::-webkit-scrollbar-thumb:hover { background: #2e384c; }
 
 /* ── Print — the forensic report must survive being exported to PDF ─────── */
 @media print {

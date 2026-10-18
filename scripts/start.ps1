@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Deep Truth — one-command setup and run (Windows 10/11, PowerShell 5.1+).
 
@@ -257,14 +257,14 @@ Write-Step '4. Python dependencies'
 if ($Py) {
     $probe = @'
 import importlib
-need = {"torch":"torch","transformers":"transformers","peft":"peft","fastapi":"fastapi",
-        "celery":"celery","redis":"redis","httpx":"httpx","reportlab":"reportlab",
-        "aiosqlite":"aiosqlite","PIL":"pillow","cv2":"opencv-python","av":"av","uvicorn":"uvicorn"}
+need = {'torch':'torch','transformers':'transformers','peft':'peft','fastapi':'fastapi',
+        'celery':'celery','redis':'redis','httpx':'httpx','reportlab':'reportlab',
+        'aiosqlite':'aiosqlite','PIL':'pillow','cv2':'opencv-python','av':'av','uvicorn':'uvicorn'}
 missing=[]
 for m,p in need.items():
     try: importlib.import_module(m)
     except Exception: missing.append(p)
-print(" ".join(sorted(set(missing))))
+print(' '.join(sorted(set(missing))))
 '@
     $missingPy = (& $Py -c $probe 2>$null)
     if ([string]::IsNullOrWhiteSpace($missingPy)) {
@@ -304,8 +304,8 @@ function Count-Adapters { param($Dir)
     if (-not (Test-Path $Dir)) { return 0 }
     return (Get-ChildItem $Dir -Recurse -Depth 1 -Filter 'adapter_config.json' -ErrorAction SilentlyContinue).Count
 }
-$v = Count-Adapters (Join-Path $RepoRoot 'videos_checkpoints')
-$i = Count-Adapters (Join-Path $RepoRoot 'images_checkpoints')
+$v = Count-Adapters (Join-Path $RepoRoot 'checkpoints\videos_checkpoints')
+$i = Count-Adapters (Join-Path $RepoRoot 'checkpoints\images_checkpoints')
 if ($v -gt 0) { Write-Ok "video: $v adapters" } else { Write-Bad 'no video adapters in videos_checkpoints\'; $missing = 1 }
 if ($i -gt 0) { Write-Ok "image: $i adapters" } else { Write-Bad 'no image adapters in images_checkpoints\'; $missing = 1 }
 
