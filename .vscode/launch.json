@@ -1,0 +1,24 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug API (FastAPI)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["main:app", "--host", "127.0.0.1", "--port", "8000"],
+      "cwd": "${workspaceFolder}/server",
+      "justMyCode": true
+    },
+    {
+      "name": "Debug Worker (Celery)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "celery",
+      "args": ["-A", "app.queue.celery_app", "worker", "--loglevel=info", "--pool=solo",
+               "--queues=analysis", "--without-gossip", "--without-mingle", "--hostname", "w1@%h"],
+      "cwd": "${workspaceFolder}/server",
+      "justMyCode": true
+    }
+  ]
+}

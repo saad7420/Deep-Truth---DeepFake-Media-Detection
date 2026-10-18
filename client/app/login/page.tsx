@@ -17,14 +17,6 @@ import { ArrowLeft, ArrowRight, Info, Shield } from "lucide-react";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
 import { useAuth } from "@/app/hooks/use-auth";
-import { cn } from "@/app/lib/utils";
-import type { Operator } from "@/app/hooks/use-auth";
-
-const ROLES: { id: Operator["role"]; label: string; blurb: string; clearance: string }[] = [
-  { id: "analyst", label: "Analyst", blurb: "Run scans and read reports", clearance: "CLASS-B" },
-  { id: "investigator", label: "Investigator", blurb: "Full case archive and exports", clearance: "CLASS-A" },
-  { id: "admin", label: "Administrator", blurb: "Plus system configuration", clearance: "CLASS-S" },
-];
 
 export default function LoginPage() {
   const router = useRouter();
@@ -32,7 +24,6 @@ export default function LoginPage() {
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<Operator["role"]>("investigator");
   const [error, setError] = useState<string | null>(null);
 
   function submit(e: React.FormEvent) {
@@ -44,8 +35,6 @@ export default function LoginPage() {
     signIn({
       name: name.trim(),
       email: email.trim(),
-      role,
-      clearance: ROLES.find((r) => r.id === role)!.clearance,
     });
     router.push("/dashboard");
   }
@@ -114,42 +103,6 @@ export default function LoginPage() {
                 className="h-11 border-slate-800 bg-slate-950 text-sm text-white placeholder:text-slate-600 focus-visible:ring-indigo-500"
               />
             </div>
-
-            <fieldset className="space-y-2">
-              <legend className="eyebrow mb-2">Role</legend>
-              <div className="space-y-2">
-                {ROLES.map((r) => (
-                  <button
-                    key={r.id}
-                    type="button"
-                    onClick={() => setRole(r.id)}
-                    aria-pressed={role === r.id}
-                    className={cn(
-                      "flex w-full items-center gap-3 rounded-lg border px-3.5 py-2.5 text-left transition-colors",
-                      role === r.id
-                        ? "border-indigo-500/40 bg-indigo-600/15"
-                        : "border-slate-800 bg-slate-950 hover:border-slate-700",
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
-                        role === r.id ? "border-indigo-500" : "border-slate-700",
-                      )}
-                    >
-                      {role === r.id && <span className="h-1.5 w-1.5 rounded-full bg-indigo-400" />}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-medium text-white">{r.label}</span>
-                      <span className="block text-xs text-slate-500">{r.blurb}</span>
-                    </span>
-                    <span className="shrink-0 font-mono text-[10px] tracking-wider text-slate-600">
-                      {r.clearance}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </fieldset>
 
             {error && (
               <p className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">

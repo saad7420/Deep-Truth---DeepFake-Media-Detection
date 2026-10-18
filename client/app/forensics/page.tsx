@@ -139,7 +139,7 @@ export default function ForensicsHubPage() {
     <AppShell width="wide">
       <PageHeader
         status={<LivePill label="Detection pipeline ready" tone="good" />}
-        title="Forensics Hub"
+        title="New analysis"
         description="Upload a video, image or audio clip. The pipeline splits the streams, runs each engine, and fuses the results into one verdict."
         actions={
           activeCaseId ? (

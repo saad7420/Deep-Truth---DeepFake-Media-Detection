@@ -16,7 +16,7 @@ import {
   Activity,
   BarChart3,
   BookOpen,
-  Database,
+  Cpu,
   FileSearch,
   FolderSearch,
   LayoutDashboard,
@@ -24,7 +24,6 @@ import {
   Menu,
   Settings,
   Shield,
-  SlidersHorizontal,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -51,24 +50,21 @@ interface NavGroup {
 
 export const NAV_GROUPS: NavGroup[] = [
   {
-    label: "Investigate",
+    label: "Workspace",
     items: [
-      { href: "/dashboard", label: "Command Center", icon: LayoutDashboard },
-      { href: "/forensics", label: "Forensics Hub", icon: FileSearch },
-      { href: "/cases", label: "Case History", icon: FolderSearch, prefix: true },
+      { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
+      { href: "/forensics", label: "New analysis", icon: FileSearch },
+      { href: "/cases", label: "Cases", icon: FolderSearch, prefix: true },
       { href: "/analytics", label: "Analytics", icon: BarChart3 },
     ],
   },
   {
-    label: "Evidence",
-    items: [{ href: "/vault", label: "Secure Vault", icon: Database }],
-  },
-  {
     label: "System",
     items: [
-      { href: "/admin", label: "Configuration", icon: SlidersHorizontal },
-      { href: "/settings", label: "Settings", icon: Settings },
+      { href: "/#models", label: "AI models", icon: Cpu },
+      { href: "/admin", label: "System status", icon: Activity },
       { href: "/docs", label: "Documentation", icon: BookOpen },
+      { href: "/settings", label: "Settings", icon: Settings },
     ],
   },
 ];
@@ -170,7 +166,7 @@ function NavList({ pathname, onNavigate }: { pathname: string; onNavigate?: () =
                 />
                 <span className="truncate">{item.label}</span>
                 {active && (
-                  <span className="ml-auto h-1.5 w-1.5 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.9)]" />
+                  <span className="ml-auto h-1.5 w-1.5 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(34,211,238,0.9)]" />
                 )}
               </Link>
             );
@@ -195,8 +191,8 @@ function OperatorCard({ onNavigate }: { onNavigate?: () => void }) {
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-white">{operator?.name ?? "—"}</p>
-            <p className="truncate font-mono text-[10px] uppercase tracking-wider text-slate-500">
-              {operator?.id} · {operator?.clearance}
+            <p className="truncate text-[11px] text-slate-500">
+              {isAuthenticated ? operator?.email : "Not signed in"}
             </p>
           </div>
         </div>
@@ -296,38 +292,74 @@ export function MobileNav() {
   );
 }
 
-/* ── Public marketing header, landing page only ──────────────────────────── */
+/* ── Public header, landing page only ───────────────────────────────────────
+   In-page anchors for the landing sections, plus the two ways into the
+   product: the console (case history, dashboard) and a straight upload. */
+
+const PUBLIC_LINKS = [
+  { href: "#detectors", label: "Detectors" },
+  { href: "#models", label: "AI Models" },
+  { href: "#solutions", label: "Solutions" },
+  { href: "#how", label: "How it works" },
+  { href: "#extension", label: "Extension" },
+  { href: "#faq", label: "FAQ" },
+];
 
 export function PublicHeader() {
+  const [open, setOpen] = useState(false);
+
   return (
-    <nav className="fixed inset-x-0 top-0 z-50 border-b border-white/5 bg-slate-950/80 backdrop-blur-lg">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+    <nav className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/90 backdrop-blur-lg">
+      <div className="mx-auto flex h-16 max-w-7xl items-center gap-8 px-4 sm:px-6 lg:px-8">
         <Brand />
-        <div className="hidden items-center gap-8 text-sm font-medium text-slate-400 md:flex">
-          <a href="#capabilities" className="transition-colors hover:text-white">
-            Capabilities
-          </a>
-          <a href="#pipeline" className="transition-colors hover:text-white">
-            Pipeline
-          </a>
-          <Link href="/docs" className="transition-colors hover:text-white">
-            Documentation
-          </Link>
+        <div className="hidden items-center gap-6 text-sm text-slate-300 lg:flex">
+          {PUBLIC_LINKS.map((l) => (
+            <a key={l.href} href={l.href} className="transition-colors hover:text-white">
+              {l.label}
+            </a>
+          ))}
         </div>
-        <div className="flex items-center gap-2">
-          <Link href="/login" className="hidden sm:block">
-            <Button variant="ghost" className="text-slate-300 hover:text-white">
-              Sign in
-            </Button>
-          </Link>
-          <Link href="/forensics">
-            <Button className="glow-brand bg-indigo-600 text-white hover:bg-indigo-500">
-              <Activity className="mr-2 h-4 w-4" />
+        <div className="ml-auto flex items-center gap-2">
+          <Link href="/dashboard" className="hidden sm:block">
+            <Button variant="outline" className="border-slate-700 bg-transparent text-slate-200 hover:bg-slate-900 hover:text-white">
               Open console
             </Button>
           </Link>
+          <Link href="/forensics">
+            <Button className="bg-indigo-600 text-white hover:bg-indigo-500">
+              <Activity className="mr-2 h-4 w-4" />
+              Analyse a file
+            </Button>
+          </Link>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="lg:hidden"
+            aria-label={open ? "Close menu" : "Open menu"}
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+          >
+            {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </Button>
         </div>
       </div>
+      {open && (
+        <div className="border-t border-slate-800 px-4 py-3 lg:hidden">
+          {PUBLIC_LINKS.map((l) => (
+            <a
+              key={l.href}
+              href={l.href}
+              onClick={() => setOpen(false)}
+              className="block rounded-md px-2 py-2.5 text-sm text-slate-300 hover:bg-slate-900 hover:text-white"
+            >
+              {l.label}
+            </a>
+          ))}
+          <Link href="/dashboard" className="mt-1 block rounded-md px-2 py-2.5 text-sm text-slate-300 hover:bg-slate-900 hover:text-white">
+            Open console
+          </Link>
+        </div>
+      )}
     </nav>
   );
 }

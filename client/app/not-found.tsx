@@ -25,7 +25,7 @@ export default function NotFound() {
           <Link href="/dashboard">
             <button className="glow-brand inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 sm:w-auto">
               <Home className="h-4 w-4" />
-              Command Center
+              Overview
             </button>
           </Link>
           <Link href="/cases">

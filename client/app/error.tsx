@@ -52,7 +52,7 @@ export default function GlobalError({
           <Link href="/dashboard">
             <button className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-slate-700 px-5 text-sm font-medium text-slate-300 transition-colors hover:border-indigo-500/50 hover:text-white sm:w-auto">
               <Home className="h-4 w-4" />
-              Command Center
+              Overview
             </button>
           </Link>
         </div>

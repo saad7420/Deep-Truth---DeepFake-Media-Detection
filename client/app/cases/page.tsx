@@ -99,7 +99,7 @@ function CaseHistory() {
     <AppShell width="wide">
       <PageHeader
         eyebrow="Archive"
-        title="Case History"
+        title="Cases"
         description="Every investigation opened against the detection pipeline, with its evidence file and final verdict."
         actions={
           <Link href="/forensics">
@@ -203,7 +203,7 @@ function CaseHistory() {
               <EmptyState
                 icon={FolderSearch}
                 title="The archive is empty"
-                description="Cases appear here the moment you upload evidence to the Forensics Hub."
+                description="Cases appear here the moment you start a new analysis."
                 action={
                   <Link href="/forensics">
                     <Button className="bg-indigo-600 text-white hover:bg-indigo-500">

@@ -136,8 +136,6 @@ export default function SettingsPage() {
 
           <div className="divide-y divide-slate-800/70 rounded-lg border border-slate-800 bg-slate-950 px-4 py-2">
             <MetaRow label="Operator ID" value={operator?.id ?? "—"} />
-            <MetaRow label="Role" value={<span className="capitalize">{operator?.role ?? "—"}</span>} />
-            <MetaRow label="Clearance" value={operator?.clearance ?? "—"} />
           </div>
 
           <p className="text-[11px] leading-relaxed text-slate-600">
@@ -163,7 +161,7 @@ export default function SettingsPage() {
         <div className="divide-y divide-slate-800/70">
           <Row
             title="Default modality"
-            description="Which analysis type the Forensics Hub starts on before you pick a file."
+            description="Which analysis type New analysis starts on before you pick a file."
           >
             <div className="flex gap-1.5">
               {(["video", "image", "audio"] as const).map((m) => (

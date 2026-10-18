@@ -1,0 +1,91 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "DeepTruth: Run all",
+      "detail": "Starts Redis, the API, one analysis worker and the web console",
+      "dependsOn": ["Redis (dev)", "API (port 8000)", "Worker", "Web console (port 3000)"],
+      "dependsOrder": "parallel",
+      "problemMatcher": [],
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "Redis (dev)",
+      "detail": "In-memory stand-in Redis on 6379. Skip if a real Redis is running.",
+      "type": "shell",
+      "command": "python scripts/dev_redis.py",
+      "options": { "cwd": "${workspaceFolder}" },
+      "isBackground": true,
+      "presentation": { "panel": "dedicated", "group": "deeptruth" },
+      "problemMatcher": {
+        "owner": "deeptruth",
+        "pattern": { "regexp": "^__never__$" },
+        "background": { "activeBegins": true, "beginsPattern": ".", "endsPattern": "listening on" }
+      }
+    },
+    {
+      "label": "API (port 8000)",
+      "type": "shell",
+      "command": "python -m uvicorn main:app --host 127.0.0.1 --port 8000",
+      "options": { "cwd": "${workspaceFolder}/server" },
+      "isBackground": true,
+      "presentation": { "panel": "dedicated", "group": "deeptruth" },
+      "problemMatcher": {
+        "owner": "deeptruth",
+        "pattern": { "regexp": "^__never__$" },
+        "background": { "activeBegins": true, "beginsPattern": ".", "endsPattern": "Application startup complete" }
+      }
+    },
+    {
+      "label": "Worker",
+      "detail": "Runs the models. One per machine on CPU: each loads its own copy.",
+      "type": "shell",
+      "command": "python -m celery -A app.queue.celery_app worker --loglevel=info --pool=solo --queues=analysis --without-gossip --without-mingle --hostname w1@%h",
+      "options": { "cwd": "${workspaceFolder}/server" },
+      "isBackground": true,
+      "presentation": { "panel": "dedicated", "group": "deeptruth" },
+      "problemMatcher": {
+        "owner": "deeptruth",
+        "pattern": { "regexp": "^__never__$" },
+        "background": { "activeBegins": true, "beginsPattern": ".", "endsPattern": " ready\\." }
+      }
+    },
+    {
+      "label": "Web console (port 3000)",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": { "cwd": "${workspaceFolder}/client" },
+      "isBackground": true,
+      "presentation": { "panel": "dedicated", "group": "deeptruth" },
+      "problemMatcher": {
+        "owner": "deeptruth",
+        "pattern": { "regexp": "^__never__$" },
+        "background": { "activeBegins": true, "beginsPattern": ".", "endsPattern": "Ready in|Local:" }
+      }
+    },
+    {
+      "label": "DeepTruth: Install dependencies",
+      "detail": "Python packages, dev Redis, and the web console's node_modules",
+      "type": "shell",
+      "command": "python -m pip install -r server/requirements.txt \"fakeredis[lua]>=2.26\" \"tokenizers>=0.21,<0.22\"; npm --prefix client install",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "DeepTruth: Run tests",
+      "type": "shell",
+      "command": "python -m pytest tests -q",
+      "options": { "cwd": "${workspaceFolder}/server" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "DeepTruth: Build extension",
+      "detail": "Rebuilds extension/*.js after editing extension/source",
+      "type": "shell",
+      "command": "npm install --no-fund --no-audit; npm run build",
+      "options": { "cwd": "${workspaceFolder}/extension/source" },
+      "problemMatcher": []
+    }
+  ]
+}

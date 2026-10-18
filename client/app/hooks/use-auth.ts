@@ -21,16 +21,12 @@ export interface Operator {
   id: string;
   name: string;
   email: string;
-  role: "analyst" | "investigator" | "admin";
-  clearance: string;
 }
 
 const GUEST: Operator = {
   id: "OP-GUEST",
   name: "Guest Operator",
   email: "guest@deeptruth.local",
-  role: "analyst",
-  clearance: "CLASS-C",
 };
 
 function read(): Operator | null {
@@ -64,8 +60,6 @@ export function useAuth() {
       id: profile.id ?? `OP-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
       name: profile.name,
       email: profile.email,
-      role: profile.role ?? "investigator",
-      clearance: profile.clearance ?? "CLASS-A",
     };
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     setOperator(next);

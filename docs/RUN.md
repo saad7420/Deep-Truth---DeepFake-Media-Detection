@@ -1,5 +1,19 @@
 # Running DeepTruth (Windows)
 
+## Quickest way: VS Code
+
+1. **File → Open Folder** → `S:\deeptruth_pipeline` (the folder that contains `server`, `client` and `extension`).
+2. First time only: **Terminal → Run Task… → DeepTruth: Install dependencies**.
+3. **Terminal → Run Build Task** (`Ctrl+Shift+B`) runs **DeepTruth: Run all**, which opens four
+   terminals: Redis (dev), API, Worker and Web console.
+4. Wait for the worker to print `ready`, then open <http://localhost:3000>.
+
+To stop, click the bin icon on each terminal. To debug the API or the worker with breakpoints,
+use the **Run and Debug** panel (`Debug API (FastAPI)` / `Debug Worker (Celery)`). Stop the
+matching task first so the port is free.
+
+## Manual way: four PowerShell windows
+
 Four processes, each in its own PowerShell window, started **in this order**.
 Project root: `S:\deeptruth_pipeline`.
 

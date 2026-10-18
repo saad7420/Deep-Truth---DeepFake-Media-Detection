@@ -110,7 +110,7 @@ export default function AdminPage() {
     <AppShell width="wide">
       <PageHeader
         eyebrow="System"
-        title="Configuration"
+        title="System status"
         description="Live state of the detection service and the settings it's running with."
       />
 
