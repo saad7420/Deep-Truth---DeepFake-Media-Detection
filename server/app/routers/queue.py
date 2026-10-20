@@ -1,20 +1,3 @@
-"""Queue observability, and the channel the backend pushes state on.
-
-Three endpoints:
-
-    GET /api/queue                     system-wide: depth, workers, cache stats
-    GET /api/queue/cases/{case_id}     one case's live job record
-    GET /api/queue/stream              Server-Sent Events; the backend tells
-                                       the browser about every transition
-
-SSE rather than WebSockets, for two reasons specific to this app. The console
-only ever *listens* — it has nothing to send back over a socket — and SSE
-gives that for free over plain HTTP, through the same CORS config, with the
-browser's own `EventSource` handling reconnection. And the Chrome extension's
-service worker cannot hold a long-lived socket open (it is terminated when
-idle), so it keeps polling `GET /cases/{id}`, which now carries the same job
-record. One state source, two delivery mechanisms, no divergence.
-"""
 from __future__ import annotations
 
 import asyncio
@@ -39,31 +22,14 @@ log = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# How often the stream emits a keep-alive when nothing is happening. Proxies
-# and browsers drop idle connections; a comment line costs nothing and keeps
-# the socket open through them.
 HEARTBEAT_SECONDS = 20
 
-# Hard lifetime for one stream, after which the server closes it and the
-# browser's EventSource reconnects on its own (that reconnect is free — the
-# next stream opens with a `snapshot` event carrying current state).
-#
-# Without a bound, a stream lives as long as the tab does, and uvicorn's
-# graceful shutdown waits for open connections: a deploy, or a reload during
-# development, hangs on "Waiting for connections to close" until somebody
-# closes the browser. An unbounded connection is also the thing that makes a
-# leaked stream slot expensive.
+# close long streams so shutdown never hangs, the browser reconnects
 MAX_STREAM_SECONDS = int(os.getenv("SSE_MAX_STREAM_SECONDS", "600"))
 
 
 @router.get("/queue", dependencies=[Depends(ratelimit.read)])
 async def queue_overview():
-    """System health for the orchestration layer.
-
-    Deliberately answers even when Redis is down — `redisOnline: false` is the
-    single most useful thing this endpoint can report, and it cannot report it
-    by raising.
-    """
     online = ping()
     if not online:
         return {
@@ -100,7 +66,6 @@ async def queue_overview():
 
 @router.get("/queue/pending", dependencies=[Depends(ratelimit.read)])
 async def queue_pending(limit: int = Query(25, ge=1, le=100)):
-    """Waiting jobs in execution order, resolved to their public case ids."""
     ids = state.pending_ids(limit)
     out = []
     for i, db_id in enumerate(ids, start=1):
@@ -118,12 +83,6 @@ async def queue_pending(limit: int = Query(25, ge=1, le=100)):
 
 @router.get("/queue/cases/{case_id}", dependencies=[Depends(ratelimit.read)])
 async def queue_case(case_id: str):
-    """One case's job record, addressed by the public `CASE-XXXXXXXX` id.
-
-    Accepts the public id (not the internal uuid) because that is the only id
-    a client ever holds, and resolves it through SQLite to the row id the
-    queue keys on.
-    """
     db_id = await _resolve_db_id(case_id)
     job = state.get_job(db_id)
     if job is None:
@@ -135,29 +94,13 @@ async def queue_case(case_id: str):
     return {"caseDbId": db_id, **job}
 
 
+# lets the extension skip the download for media we already know
 @router.get("/cache/lookup", dependencies=[Depends(ratelimit.read)])
 async def cache_lookup(
     media_type: str = Query(..., description="image | video | audio"),
     url: Optional[str] = Query(None, description="Media URL seen on a page"),
     sha256: Optional[str] = Query(None, description="sha256 of the file bytes"),
 ):
-    """Ask whether a verdict already exists, without submitting anything.
-
-    This is the cheap path for the browser extension. Its normal flow is
-    download the media, upload it, wait — and for media it has already seen,
-    every one of those steps is wasted. Asking by URL first turns a repeat
-    encounter into a single GET.
-
-    Either key works:
-      * `sha256` — exact, when the caller already holds the bytes
-      * `url`    — resolves through the URL index to a content hash, so it
-                   answers only for bytes actually fetched from that URL
-                   before. A URL whose content changed misses rather than
-                   returning a stale verdict.
-
-    A miss is a 200 with `hit: false`, not a 404 — "we have not seen this" is
-    a successful answer to the question asked.
-    """
     if media_type not in ("image", "video", "audio"):
         raise HTTPException(400, "media_type must be one of: image, video, audio")
     if not url and not sha256:
@@ -178,8 +121,6 @@ async def cache_lookup(
         return {
             "hit": False,
             "mediaType": media_type,
-            # Returned even on a miss: a known URL with no verdict still tells
-            # the caller these bytes were seen, which is worth knowing.
             "contentHash": resolved_sha,
             "normalisedUrl": cache.normalise_url(url) if url else None,
         }
@@ -194,9 +135,6 @@ async def cache_lookup(
         "syntheticLikelihood": payload["likelihood"],
         "computedAt": payload.get("computedAt"),
         "sourceCaseDbId": payload.get("sourceCaseId"),
-        # The public id of the case that produced this verdict — the only one
-        # a client can navigate to. Empty for entries cached before this field
-        # existed, so callers must treat it as optional.
         "sourceCaseId": payload.get("sourceCaseRef") or None,
         "analysisResults": payload.get("rows", []),
     }
@@ -216,36 +154,18 @@ async def _resolve_db_id(case_id: str) -> str:
     return row["id"]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Server-Sent Events
-# ─────────────────────────────────────────────────────────────────────────────
-
 def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
+# server-sent events: a snapshot first, then live job updates
 @router.get("/queue/stream", dependencies=[Depends(ratelimit.stream)])
 async def queue_stream(request: Request, case_id: Optional[str] = Query(None)):
-    """Push every job transition to the browser as it happens.
-
-    With `?case_id=CASE-XXXXXXXX` the stream is filtered to that one case —
-    what a report page wants. Without it, every transition is forwarded, which
-    is what a dashboard showing the whole queue wants.
-
-    The first event is always a `snapshot`, so a client that connects halfway
-    through a run renders the correct state immediately instead of waiting for
-    the next transition — which, for a job that is already finished, would
-    never arrive.
-    """
     if not ping():
         raise HTTPException(503, "Redis is not reachable; no event stream available.")
 
     watch_db_id = await _resolve_db_id(case_id) if case_id else None
 
-    # Claimed before the generator starts so the 429 is a plain rejected
-    # request. Raising inside the generator would already have committed a 200
-    # and streaming headers, leaving the client a stream that opens and then
-    # dies for no stated reason.
     slot = ratelimit.StreamSlot(request).__enter__()
 
     async def events() -> AsyncIterator[str]:
@@ -259,7 +179,6 @@ async def queue_stream(request: Request, case_id: Optional[str] = Query(None)):
             return
 
         try:
-            # ── Opening snapshot ────────────────────────────────────────────
             if watch_db_id:
                 job = state.get_job(watch_db_id)
                 yield _sse("snapshot", {"caseDbId": watch_db_id,
@@ -274,21 +193,13 @@ async def queue_stream(request: Request, case_id: Optional[str] = Query(None)):
             last_beat = started
 
             while True:
-                # A disconnected browser is only detectable between reads;
-                # checking each iteration keeps closed tabs from leaking a
-                # subscription per reload.
                 if await request.is_disconnected():
                     break
 
                 if asyncio.get_event_loop().time() - started >= MAX_STREAM_SECONDS:
-                    # Tell the client why, so a reconnect is clearly expected
-                    # rather than looking like a dropped connection.
                     yield _sse("reconnect", {"reason": "max stream lifetime reached"})
                     break
 
-                # `get_message` is blocking C code, so it runs in a thread —
-                # otherwise a quiet queue would stall the whole event loop for
-                # the full timeout and every other request with it.
                 message = await asyncio.to_thread(
                     pubsub.get_message, timeout=1.0
                 )
@@ -302,9 +213,6 @@ async def queue_stream(request: Request, case_id: Optional[str] = Query(None)):
                     if watch_db_id and payload.get("caseDbId") != watch_db_id:
                         continue
 
-                    # Re-read rather than trusting the published delta: the
-                    # published event carries only what changed, while the
-                    # client wants position and attempt counts alongside it.
                     db_id = payload.get("caseDbId")
                     full = state.get_job(db_id) if db_id else None
                     yield _sse("job", {"caseDbId": db_id, **(full or payload)})
@@ -317,10 +225,6 @@ async def queue_stream(request: Request, case_id: Optional[str] = Query(None)):
         except asyncio.CancelledError:
             raise
         finally:
-            # Runs on every exit path including client disconnect, which
-            # arrives here as CancelledError. Releasing the slot matters more
-            # than closing pubsub: a leaked slot costs that client capacity
-            # until its hour-long TTL expires.
             slot.__exit__(None, None, None)
             try:
                 pubsub.close()
@@ -333,8 +237,6 @@ async def queue_stream(request: Request, case_id: Optional[str] = Query(None)):
         headers={
             "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
-            # nginx buffers proxied responses by default, which would hold
-            # every event until the buffer fills — i.e. defeat the stream.
             "X-Accel-Buffering": "no",
         },
     )

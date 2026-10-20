@@ -1,38 +1,13 @@
-/* ============================================================================
-   DEEP TRUTH EXTENSION — API CLIENT
-   ----------------------------------------------------------------------------
-   The one place the extension talks to the FastAPI backend
-   (server/app/routers/cases.py).
-
-   The flow the server actually supports is upload-then-poll:
-
-     1. fetch the media bytes off the page
-     2. POST them to /api/cases as multipart/form-data
-     3. the server stores the file, opens a case, and queues analysis on a
-        BackgroundTask — the response comes straight back as "processing"
-     4. GET /api/cases/{caseId} until status leaves "processing"
-
-   There is no /api/v1/analyze, no task id, and no server-side URL fetching:
-   the backend never sees the page, only the bytes we hand it.
-   ========================================================================= */
-
 import type { CacheLookup, CaseResponse, MediaType } from '../types';
 
-/** Mirrors ALLOWED_TYPES in server/app/services/analyser.py exactly. The
-    server re-validates, so this is only here to fail fast with a message
-    that names the actual problem instead of surfacing a raw 422. */
 export const ACCEPTED_MIME: Record<MediaType, string[]> = {
   image: ['image/jpeg', 'image/png', 'image/webp', 'image/bmp', 'image/tiff'],
   video: ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/webm', 'video/x-matroska'],
   audio: ['audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/flac', 'audio/ogg', 'audio/mp4'],
 };
 
-/** Mirrors MAX_FILE_SIZE_MB (server default 500). */
 export const MAX_FILE_MB = 500;
 
-/** File extension to give the upload, so the server's `Path(...).suffix`
-    lands on something sensible when the page URL has no extension of its own
-    (blob: URLs, CDN paths ending in a hash, and so on). */
 const EXT_FOR_MIME: Record<string, string> = {
   'image/jpeg': '.jpg',
   'image/png': '.png',
@@ -61,11 +36,8 @@ export class ApiError extends Error {
   }
 }
 
-/** Normalise whatever the user typed in settings into a clean origin. */
 export function normaliseApiUrl(raw: string): string {
   const trimmed = (raw || '').trim().replace(/\/+$/, '');
-  // Tolerate someone pasting the URL with /api already on the end — the
-  // console's own .env.local wants it that way, so it's an easy mix-up.
   return trimmed.replace(/\/api$/, '');
 }
 
@@ -73,7 +45,6 @@ function apiBase(apiUrl: string): string {
   return `${normaliseApiUrl(apiUrl)}/api`;
 }
 
-/** FastAPI errors are `{detail: string}` or `{detail: [{msg}]}`. */
 function readDetail(body: unknown, fallback: string): string {
   if (body && typeof body === 'object' && 'detail' in body) {
     const d = (body as { detail: unknown }).detail;
@@ -85,8 +56,6 @@ function readDetail(body: unknown, fallback: string): string {
   }
   return fallback;
 }
-
-/* ── Health ──────────────────────────────────────────────────────────────── */
 
 export async function checkHealth(apiUrl: string): Promise<{ ok: boolean; detail: string }> {
   try {
@@ -105,29 +74,12 @@ export async function checkHealth(apiUrl: string): Promise<{ ok: boolean; detail
   }
 }
 
-/* ── Cache pre-check ─────────────────────────────────────────────────────── */
-
-/**
- * Ask the server whether this media URL already has a verdict, before
- * spending anything on it.
- *
- * This is the cheapest possible path and it matters most here: the
- * extension's normal flow downloads the media, uploads it, then polls for
- * minutes. For media the server has already analysed — the same avatar on
- * every page of a site, an image that has been through the queue for another
- * user — every one of those steps is wasted. One GET replaces all of it.
- *
- * A miss is not an error, and neither is an unreachable server: both return
- * null and the caller proceeds with the normal download-and-upload flow. A
- * cache that is down must slow the extension, never break it.
- */
+// one cheap request tells us if this media was already analysed
 export async function lookupCachedUrl(
   apiUrl: string,
   mediaUrl: string,
   mediaType: MediaType,
 ): Promise<CacheLookup | null> {
-  // blob: and data: URLs are per-page identifiers with no meaning across
-  // sessions; the server rejects them anyway, so don't spend a request.
   if (!/^https?:/i.test(mediaUrl)) return null;
 
   const qs = new URLSearchParams({ media_type: mediaType, url: mediaUrl });
@@ -141,16 +93,6 @@ export async function lookupCachedUrl(
   }
 }
 
-/* ── Media retrieval ─────────────────────────────────────────────────────── */
-
-/**
- * Pull the media bytes down so they can be uploaded.
- *
- * This runs in the service worker rather than the content script because the
- * worker has the extension's host permissions and is not subject to the
- * page's own CSP — a content script fetching a CDN asset is frequently
- * blocked by connect-src on sites like Instagram and X.
- */
 export async function fetchMedia(
   mediaUrl: string,
   expected: MediaType,
@@ -177,8 +119,6 @@ export async function fetchMedia(
     );
   }
 
-  // A stream served without a usable Content-Type can't be validated by the
-  // server, and guessing wrong wastes a long upload. Say so plainly.
   const contentType = (blob.type || '').split(';')[0].trim();
   if (!contentType) {
     throw new ApiError(0, 'The server did not report a media type for this file.');
@@ -194,15 +134,11 @@ export async function fetchMedia(
   return { blob, contentType };
 }
 
-/* ── Case creation ───────────────────────────────────────────────────────── */
-
-/** Build a readable case title from the page and media URL. */
 export function buildTitle(pageUrl: string, mediaUrl: string): string {
   let host = 'page';
   try {
     host = new URL(pageUrl).hostname.replace(/^www\./, '');
   } catch {
-    /* keep the fallback */
   }
 
   let name = '';
@@ -210,33 +146,13 @@ export function buildTitle(pageUrl: string, mediaUrl: string): string {
     const path = new URL(mediaUrl, pageUrl).pathname;
     name = decodeURIComponent(path.split('/').filter(Boolean).pop() ?? '');
   } catch {
-    /* blob: and data: URLs have no useful path */
   }
 
   const base = name ? `${host} — ${name}` : `${host} — in-page media`;
-  // The server caps title at 200 characters (CaseBase).
   return base.length > 200 ? `${base.slice(0, 197)}...` : base;
 }
 
-/**
- * Ask the server to fetch the media itself, instead of uploading the bytes.
- *
- * This is the preferred path (Module 4 FE-1). The extension already had to
- * download the media to upload it, so the user was paying for the transfer
- * twice — once down, once up — for every scan. Handing over the URL costs a
- * few hundred bytes.
- *
- * It is not always possible, which is why `startAnalysis` keeps the upload
- * path as a fallback:
- *   * `blob:` and `data:` URLs mean nothing outside this page
- *   * media behind a login is fetchable by the browser (which holds the
- *     session) and not by the server, which arrives anonymous
- *   * an origin may simply refuse an unfamiliar client
- *
- * The server distinguishes those cases: a 400 means the URL is unusable in
- * principle and there is no point retrying it, while a case that later fails
- * with an auth error is the signal to re-submit the bytes.
- */
+// let the server download it, so the user does not pay for the transfer
 export async function createCaseFromUrl(
   apiUrl: string,
   opts: { mediaUrl: string; mediaType: MediaType; title: string; notes?: string },
@@ -265,15 +181,11 @@ export async function createCaseFromUrl(
   return body as CaseResponse;
 }
 
-/** True for URLs only this browser can resolve, so the server cannot be asked. */
+// blob: and data: urls only exist inside the browser
 export function isBrowserOnlyUrl(mediaUrl: string): boolean {
   return !/^https?:/i.test(mediaUrl);
 }
 
-/**
- * POST the media to /api/cases. Returns the freshly opened case, which the
- * server hands back as `processing` with analysis already queued.
- */
 export async function createCase(
   apiUrl: string,
   opts: {
@@ -282,9 +194,6 @@ export async function createCase(
     mediaType: MediaType;
     title: string;
     notes?: string;
-    /** The media URL these bytes came from. Sent so the server can index this
-        content hash against the URL, which is what makes the next encounter
-        resolvable by `lookupCachedUrl` without downloading anything. */
     sourceUrl?: string;
   },
 ): Promise<CaseResponse> {
@@ -315,8 +224,6 @@ export async function createCase(
   return body as CaseResponse;
 }
 
-/* ── Polling ─────────────────────────────────────────────────────────────── */
-
 export async function getCase(apiUrl: string, caseId: string): Promise<CaseResponse> {
   let res: Response;
   try {
@@ -331,16 +238,6 @@ export async function getCase(apiUrl: string, caseId: string): Promise<CaseRespo
   return body as CaseResponse;
 }
 
-/* ── Result interpretation ───────────────────────────────────────────────── */
-
-/**
- * Pull the engine's own one-line reasoning out of the summary row, so the
- * badge can say why rather than only how much.
- *
- * Row classification matches the console's app/lib/analysis.ts: the summary
- * row carries `details.tier === "summary"`, with a name fallback for rows
- * written before that field existed.
- */
 function summaryRow(c: CaseResponse) {
   return c.analysisResults.find((r) => {
     const tier = (r.details as { tier?: unknown } | null | undefined)?.tier;
@@ -356,10 +253,6 @@ export function explain(c: CaseResponse): string | undefined {
   const d = summary.details as { rationale?: unknown; note?: unknown; error?: unknown };
   for (const v of [d.rationale, d.note, d.error]) {
     if (typeof v === 'string' && v.trim()) {
-      // The audio engine prefixes its rationale with a long EXPERIMENTAL
-      // notice. That belongs in the UI as a flag, not as the body text of a
-      // badge tooltip — `isExperimental` carries it instead, so strip the
-      // prefix here rather than truncating mid-sentence later.
       const text = v.trim();
       const marker = text.indexOf(' | ');
       if (text.startsWith('EXPERIMENTAL CHECKPOINT:') && marker > 0) {
@@ -371,21 +264,11 @@ export function explain(c: CaseResponse): string | undefined {
   return undefined;
 }
 
-/**
- * True when the engine behind this verdict is not yet validated for
- * production use. Currently only the audio engine sets it, while
- * DEEPTRUTH_AUDIO_EXPERIMENTAL is on server-side.
- *
- * Surfaced separately from the explanation so the badge can mark the result
- * visually — a reader who only glances at the colour and percentage still
- * needs to know the number is provisional.
- */
 export function isExperimental(c: CaseResponse): boolean {
   const details = summaryRow(c)?.details as { experimental?: unknown } | undefined;
   return details?.experimental === true;
 }
 
-/** True once the pipeline has finished, whatever the outcome. */
 export function isSettled(status: CaseResponse['status']): boolean {
   return status !== 'processing';
 }

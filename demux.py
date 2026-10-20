@@ -1,10 +1,3 @@
-"""ffprobe + ffmpeg helpers.
-
-For video files we use ffmpeg to pull a 16 kHz mono WAV; frame extraction
-itself goes through the training pipeline's _decode_video (decord/torchvision)
-to match training. For pure audio inputs we still normalise via ffmpeg.
-For images, we never invoke ffmpeg.
-"""
 from __future__ import annotations
 import json
 import subprocess
@@ -37,6 +30,7 @@ def detect_kind_by_ext(path: Path) -> str | None:
     return None
 
 
+# ffprobe tells us the kind, duration and whether there is audio
 def probe(path: Path) -> MediaInfo:
     ext_kind = detect_kind_by_ext(path)
 
@@ -89,10 +83,9 @@ def probe(path: Path) -> MediaInfo:
                      width=width, height=height)
 
 
+# 16 kHz mono is what the audio model expects
 def extract_audio_wav(input_path: Path, output_path: Path,
                       sr: int = 16000) -> Path:
-    """Mono PCM WAV at the given sample rate. Used for both video tracks
-    and audio-only inputs."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = ["ffmpeg", "-y", "-loglevel", "error",
            "-i", str(input_path),

@@ -1,53 +1,23 @@
-"""Cross-modal fusion for video cases (Module 9).
-
-A video is judged on two independent streams: its frames (VisualForensicsEngine)
-and its soundtrack (the audio engine). Either one can be manipulated on its
-own — a face swap over the original voice, or genuine footage with a cloned
-voice — so the fused verdict has to raise an alarm when *either* stream does,
-and say which one did.
-
-Policy
-------
-Each usable stream (confidence > 0) is first shrunk toward 0.5 by how much
-we trust that stream's model:
-
-    evidence_s = 0.5 + reliability_s * (p_s - 0.5)
-
-then the fused probability is the strongest evidence of any stream (an
-alarm from one stream is not cancelled by the other stream looking clean).
-
-Reliability is 1.0 for a validated model. The current audio checkpoint is
-flagged experimental (trained only on ASVspoof 2019 LA, known to call real
-phone audio fake), so it gets AUDIO_EXPERIMENTAL_RELIABILITY = 0.25: at most
-0.5 + 0.25 * 0.5 = 0.625. That is below the 0.65 "manipulated" line, so an
-unvalidated audio model can raise a case to "inconclusive" but can never
-convict a video on its own. Once the audio model is validated
-(DEEPTRUTH_AUDIO_EXPERIMENTAL=false) it carries full weight.
-
-The manipulation type is read from the streams' own probabilities, so the
-report can say *what* was found even when the fused score is moderated.
-"""
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
 
-#: Verdict bands, identical to analyser._status().
 FAKE_LINE = 0.65
 REAL_LINE = 0.35
 
+# experimental audio can raise doubt but cannot convict on its own
 AUDIO_EXPERIMENTAL_RELIABILITY = float(
     os.getenv("DEEPTRUTH_AUDIO_EXPERIMENTAL_WEIGHT", "0.25"))
 
 
 @dataclass
 class Stream:
-    """One modality's result, as the fusion layer sees it."""
-    name: str                 # "visual" | "audio"
-    fake_prob: float          # calibrated, 0..1
-    confidence: float         # 0 means "no information"
-    reliability: float = 1.0  # how far we trust this model, 0..1
-    note: str = ""            # why the stream is unusable, if it is
+    name: str
+    fake_prob: float
+    confidence: float
+    reliability: float = 1.0
+    note: str = ""
 
     @property
     def usable(self) -> bool:
@@ -55,6 +25,7 @@ class Stream:
 
     @property
     def evidence(self) -> float:
+        # shrink toward 0.5 by how much we trust this stream
         return 0.5 + self.reliability * (self.fake_prob - 0.5)
 
 
@@ -90,8 +61,8 @@ _TYPE_TEXT = {
 }
 
 
+# the strongest weighted evidence wins, and we report which stream it came from
 def fuse(visual: Stream, audio: Stream | None) -> FusionResult:
-    """Combine the visual and audio streams of one video."""
     streams = [s for s in (visual, audio) if s is not None]
     usable = [s for s in streams if s.usable]
     summary = {

@@ -1,17 +1,4 @@
 #!/usr/bin/env python3
-"""
-Preflight check for the Deep Truth pipeline.
-
-Run this from the project root (the directory that contains `server/`) before
-starting the API. It answers the question that a bare "inconclusive" verdict
-does not: is the pipeline actually wired up, or is it silently returning
-neutral results?
-
-    python verify_setup.py
-
-It imports nothing heavy unless torch is already installed, so it is safe to
-run on a machine that has not finished `pip install -r requirements.txt`.
-"""
 from __future__ import annotations
 
 import json
@@ -46,7 +33,6 @@ def warn(msg: str) -> None:
 print("\nDeep Truth — setup check")
 print("=" * 62)
 
-# ── 1. Package name ──────────────────────────────────────────────────────────
 print("\n[1] Package layout")
 
 if ROOT.name != "deeptruth_pipeline":
@@ -66,13 +52,12 @@ else:
 
 sys.path.insert(0, str(ROOT.parent))
 try:
-    import deeptruth_pipeline  # noqa: F401
+    import deeptruth_pipeline
 
     ok("`import deeptruth_pipeline` resolves")
-except Exception as exc:  # noqa: BLE001
+except Exception as exc:
     bad(f"`import deeptruth_pipeline` failed: {exc}", "fix the package name above")
 
-# ── 2. Checkpoints ───────────────────────────────────────────────────────────
 print("\n[2] Checkpoints")
 
 VIDEO_DIR = Path(os.environ.get("DEEPTRUTH_CHECKPOINTS", ROOT / "videos_checkpoints"))
@@ -88,7 +73,6 @@ EXPECTED_IMAGE = {
 
 
 def scan(directory: Path, prefix: str) -> dict[str, Path]:
-    """Find <prefix><slug>_lora_best directories holding a PEFT adapter."""
     out: dict[str, Path] = {}
     if not directory.exists():
         return out
@@ -98,7 +82,7 @@ def scan(directory: Path, prefix: str) -> dict[str, Path]:
         if prefix and not entry.name.startswith(prefix):
             continue
         if not prefix and entry.name.startswith("image_"):
-            continue  # image adapters must not be picked up by the video branch
+            continue
         slug = entry.name[len(prefix): -len("_lora_best")]
         if (entry / "adapter_config.json").exists():
             out[slug] = entry
@@ -140,12 +124,11 @@ elif missing := EXPECTED_IMAGE - set(image):
 else:
     ok(f"all 8 image adapters present: {', '.join(sorted(image))}")
 
-# The one checkpoint whose classifier head lives outside the adapter.
 if "ffpp" in image:
     cfg_path = image["ffpp"] / "adapter_config.json"
     try:
         cfg = json.loads(cfg_path.read_text())
-    except Exception:  # noqa: BLE001
+    except Exception:
         cfg = {}
     has_head_in_adapter = bool(cfg.get("modules_to_save"))
     has_head_file = (image["ffpp"] / "classifier_head.pt").exists()
@@ -167,7 +150,6 @@ if VIDEO_DIR.resolve() == IMAGE_DIR.resolve():
         "the two ensembles."
     )
 
-# ── 3. Supporting paths ──────────────────────────────────────────────────────
 print("\n[3] Supporting paths")
 
 train = Path(
@@ -194,7 +176,6 @@ for name, path in [
     else:
         bad(f"{name} directory not writable: {path}", "chmod u+w it")
 
-# ── 4. Python dependencies ───────────────────────────────────────────────────
 print("\n[4] Dependencies")
 
 for mod, note in [
@@ -217,17 +198,6 @@ for mod, note in [
                 )
                 continue
             if major_minor >= (0, 20):
-                # Reproduced directly: peft 0.20.0 raises
-                # "VivitForVideoClassification.forward() got an unexpected
-                # keyword argument 'input_ids'" on every checkpoint, every
-                # time. TaskType.FEATURE_EXTRACTION has no vision-specific
-                # wrapper class in peft, so get_peft_model() falls back to
-                # the generic base PeftModel, whose forward() is hardcoded
-                # for text models and unconditionally injects input_ids
-                # into the call — ViViT/ViT reject that outright. The
-                # inferencers now bypass this via get_base_model(), but
-                # that fix was only confirmed against 0.19.0; flag 0.20+
-                # until it's specifically re-tested.
                 warn(
                     f"peft {ver} — 0.20.0 reproducibly hit the "
                     f"TaskType.FEATURE_EXTRACTION input_ids bug on this "
@@ -241,14 +211,6 @@ for mod, note in [
     except ImportError:
         bad(f"{mod} not installed ({note})", "pip install -r server/requirements.txt")
 
-# torch<2.3 lacks torch.float8_e4m3fnuz, which transformers>=4.49 references
-# unconditionally somewhere in its internals — reproduced directly with
-# torch 2.1.2 + transformers 4.49.0: "module 'torch' has no attribute
-# 'float8_e4m3fnuz'" on every single checkpoint load, regardless of which
-# one. server/requirements.txt's old torch>=2.1 floor was too low for
-# transformers>=4.45's actual requirements; checked here explicitly rather
-# than only in requirements.txt, since an already-installed environment
-# won't re-read that file.
 try:
     import torch
     import transformers
@@ -265,10 +227,10 @@ try:
             "unconditionally on model load",
         )
 except ImportError:
-    pass  # already reported as missing above
+    pass
 
 try:
-    import facenet_pytorch  # noqa: F401
+    import facenet_pytorch
 
     ok("facenet-pytorch (MTCNN face detection)")
 except ImportError:
@@ -279,7 +241,6 @@ except ImportError:
         "Expect weaker results on face deepfakes."
     )
 
-# ── 5. Audio checkpoint (optional — only checked if configured) ─────────────
 print("\n[5] Audio checkpoint (WavLM)")
 
 audio_checkpoint = os.environ.get("DEEPTRUTH_AUDIO_CHECKPOINT", "").strip()
@@ -334,7 +295,7 @@ else:
                         f"({thr}). The explicit env var wins — confirm that's "
                         f"intentional."
                     )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 warn(f"metadata.json exists but could not be parsed: {exc}")
         else:
             warn(
@@ -351,14 +312,13 @@ else:
                   "console and extension until this is set to false.")
 
     try:
-        import torch  # noqa: F401
-        import transformers  # noqa: F401
+        import torch
+        import transformers
         ok("torch + transformers available for audio inference")
     except ImportError as exc:
         bad(f"audio checkpoint is configured but a dependency is missing: {exc}",
             "pip install -r server/requirements.txt")
 
-# ── Summary ──────────────────────────────────────────────────────────────────
 print("\n" + "=" * 62)
 if problems:
     print(f"\n{len(problems)} problem(s) must be fixed:\n")

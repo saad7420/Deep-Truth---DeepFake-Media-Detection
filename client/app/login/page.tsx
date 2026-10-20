@@ -1,14 +1,5 @@
 "use client";
 
-/* ============================================================================
-   DEEP TRUTH — SIGN IN
-   ----------------------------------------------------------------------------
-   The analysis service has no auth layer, and this page says so plainly rather
-   than staging a password field that validates nothing. What it collects is
-   attribution: a name and email stamped onto the cases you open, so an
-   investigation can be traced back to a person.
-   ========================================================================= */
-
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";

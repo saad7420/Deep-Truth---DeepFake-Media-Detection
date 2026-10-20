@@ -1,15 +1,5 @@
 "use client";
 
-/* ============================================================================
-   DEEP TRUTH — OVERVIEW (dashboard)
-   ----------------------------------------------------------------------------
-   The console's home. The first thing on the page is the thing people come
-   here to do — check a file — with the system's live state beside it. Below:
-   verdict totals, the distribution, the media mix and the newest cases, all
-   from GET /stats and GET /cases. Nothing on this page is invented: a tile
-   with no data shows a dash.
-   ========================================================================= */
-
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
@@ -27,7 +17,6 @@ import { ACCEPT_ATTRIBUTE, casesApi, inferMediaType, validateFile } from "@/app/
 import { cn } from "@/app/lib/utils";
 import type { MediaType } from "@/app/shared/schema";
 
-/* Checkpoints shipped per stream (checkpoints/ directory). */
 const MODEL_GROUPS = [
   { label: "Video · ViViT", count: 6 },
   { label: "Image · ViT", count: 8 },
@@ -65,13 +54,11 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      {/* ── Analyse + system ──────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.6fr_1fr]">
         <AnalysePanel />
         <SystemPanel />
       </div>
 
-      {/* ── Verdict totals ────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi label="Cases analysed" value={v(stats?.totalCases)} hint={`${mix.image} image · ${mix.audio} audio · ${mix.video} video`} bar="bg-cyan-400" href="/cases" />
         <Kpi label="Manipulated" value={v(stats?.manipulated)} hint={pct(stats?.manipulated)} bar="bg-red-400" tone="text-red-400" href="/cases?status=manipulated" />
@@ -79,7 +66,6 @@ export default function DashboardPage() {
         <Kpi label="Inconclusive" value={v(stats?.inconclusive)} hint={total ? `${pct(stats?.inconclusive)} · models disagreed` : "No cases yet"} bar="bg-amber-400" tone="text-amber-400" href="/cases?status=inconclusive" />
       </div>
 
-      {/* ── Distribution + risk/mix ───────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.6fr_1fr]">
         <Panel className="p-5">
           <div className="mb-4 flex items-center justify-between">
@@ -120,7 +106,6 @@ export default function DashboardPage() {
         </Panel>
       </div>
 
-      {/* ── Recent cases ──────────────────────────────────────────────────── */}
       <Panel className="overflow-hidden">
         <PanelHeading
           title="Recent cases"
@@ -149,8 +134,6 @@ export default function DashboardPage() {
     </AppShell>
   );
 }
-
-/* ── Analyse: drop a file or paste a link ────────────────────────────────── */
 
 function AnalysePanel() {
   const router = useRouter();
@@ -281,8 +264,6 @@ function AnalysePanel() {
   );
 }
 
-/* ── System: is the engine up, and is anything waiting ───────────────────── */
-
 function SystemPanel() {
   const { data: health, isError, isLoading } = useHealth();
   const { data: queue } = useQueueOverview();
@@ -327,8 +308,6 @@ function SystemPanel() {
     </Panel>
   );
 }
-
-/* ── Pieces ──────────────────────────────────────────────────────────────── */
 
 function Kpi({ label, value, hint, bar, tone, href }: { label: string; value: string; hint: string; bar: string; tone?: string; href: string }) {
   return (

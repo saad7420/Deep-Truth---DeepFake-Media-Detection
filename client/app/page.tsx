@@ -1,22 +1,11 @@
 "use client";
 
-/* ============================================================================
-   DEEP TRUTH — LANDING
-   ----------------------------------------------------------------------------
-   A dark hero over light, editorial sections. Every claim on this page is
-   something the system actually does; model counts and datasets match
-   config.py and the checkpoints directory. The hero card is labelled as an
-   example so it is never mistaken for a real case.
-   ========================================================================= */
-
 import Link from "next/link";
 import { ArrowRight, Plus } from "lucide-react";
 
 import { PublicHeader } from "@/app/components/Navigation";
 import { Button } from "@/app/components/ui/button";
 import { cn } from "@/app/lib/utils";
-
-/* ── Content ─────────────────────────────────────────────────────────────── */
 
 const STATS = [
   { value: "16", label: "trained AI models" },
@@ -124,14 +113,11 @@ const FAQ = [
 
 const BADGES = [
   { label: "Verify", cls: "bg-cyan-100 text-cyan-800" },
-  // `sky` is remapped to violet in globals.css: the processing colour.
   { label: "Analysing", cls: "bg-sky-100 text-sky-700" },
   { label: "Authentic", cls: "bg-emerald-100 text-emerald-700" },
   { label: "Inconclusive", cls: "bg-amber-100 text-amber-700" },
   { label: "Manipulated", cls: "bg-red-100 text-red-700" },
 ];
-
-/* ── Small building blocks ───────────────────────────────────────────────── */
 
 function Eyebrow({ children, dark }: { children: React.ReactNode; dark?: boolean }) {
   return (
@@ -163,7 +149,6 @@ function Pill({ label, cls }: { label: string; cls: string }) {
   );
 }
 
-/* Small dark illustrations at the top of each detector card. */
 function DetectorVisual({ kind }: { kind: "video" | "image" | "audio" }) {
   if (kind === "video") {
     return (
@@ -194,14 +179,11 @@ function DetectorVisual({ kind }: { kind: "video" | "image" | "audio" }) {
   );
 }
 
-/* ── Page ────────────────────────────────────────────────────────────────── */
-
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-paper text-paper-ink">
       <PublicHeader />
 
-      {/* ── Hero ──────────────────────────────────────────────────────────── */}
       <header className="relative overflow-hidden bg-slate-950 text-slate-100">
         <div className="lp-hero-grid pointer-events-none absolute inset-0" />
         <div className="relative mx-auto grid max-w-7xl items-center gap-14 px-4 py-20 sm:px-6 lg:grid-cols-[1.05fr_.95fr] lg:px-8 lg:py-24">
@@ -236,7 +218,6 @@ export default function LandingPage() {
             </p>
           </div>
 
-          {/* Example verdict card — illustrative, labelled as such */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 shadow-[0_30px_80px_rgba(0,0,0,.45)]">
             <div className="mb-3 flex justify-between font-mono text-[11px] text-slate-500">
               <span>Example result · image</span>
@@ -290,7 +271,6 @@ export default function LandingPage() {
       </header>
 
       <main>
-        {/* ── Detectors ───────────────────────────────────────────────────── */}
         <section id="detectors" className="scroll-mt-16 border-b border-paper-line py-24">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <SectionHead
@@ -324,7 +304,6 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* ── AI models ───────────────────────────────────────────────────── */}
         <section id="models" className="scroll-mt-16 border-b border-paper-line bg-white py-24">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <SectionHead
@@ -387,7 +366,6 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* ── How it works ────────────────────────────────────────────────── */}
         <section id="how" className="scroll-mt-16 border-b border-paper-line py-24">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <SectionHead
@@ -423,7 +401,6 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* ── Solutions ───────────────────────────────────────────────────── */}
         <section id="solutions" className="scroll-mt-16 border-b border-paper-line py-24">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <SectionHead
@@ -446,7 +423,6 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* ── Evidence ────────────────────────────────────────────────────── */}
         <section className="border-b border-paper-line bg-white py-24">
           <div className="mx-auto grid max-w-7xl items-center gap-14 px-4 sm:px-6 lg:grid-cols-2 lg:px-8">
             <div>
@@ -499,7 +475,6 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* ── Extension ───────────────────────────────────────────────────── */}
         <section id="extension" className="scroll-mt-16 bg-slate-950 py-24 text-slate-100">
           <div className="mx-auto grid max-w-7xl items-center gap-14 px-4 sm:px-6 lg:grid-cols-2 lg:px-8">
             <div>
@@ -547,7 +522,6 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* ── Why + FAQ ───────────────────────────────────────────────────── */}
         <section id="faq" className="scroll-mt-16 py-24">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="grid gap-6 border-t border-paper-line sm:grid-cols-2 lg:grid-cols-4">
@@ -582,7 +556,6 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* ── Final call to action ────────────────────────────────────────── */}
         <section className="bg-slate-950 py-24 text-center text-slate-100">
           <div className="mx-auto max-w-3xl px-4">
             <Eyebrow dark>Don&apos;t share it until you&apos;ve checked it</Eyebrow>
@@ -604,7 +577,6 @@ export default function LandingPage() {
         </section>
       </main>
 
-      {/* ── Footer ────────────────────────────────────────────────────────── */}
       <footer className="bg-[#060b14] py-12 text-sm text-slate-400">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr]">

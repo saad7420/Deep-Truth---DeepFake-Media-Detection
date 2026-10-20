@@ -1,17 +1,5 @@
 "use client";
 
-/* ============================================================================
-   DEEP TRUTH — ORCHESTRATION STATE
-   ----------------------------------------------------------------------------
-   Renders `case.job` — what the analysis job is doing, as opposed to what it
-   concluded (that is StatusBadge, driven by `case.status`).
-
-   The distinction matters most while a case sits at "processing". That badge
-   alone cannot say whether the case is third in a queue, executing on a
-   worker, or on its second attempt after a transient failure, and an operator
-   staring at a spinner for four minutes deserves to know which.
-   ========================================================================= */
-
 import {
   CheckCircle2,
   Clock,
@@ -42,8 +30,6 @@ const TONE: Record<string, string> = {
   bad: "border-red-500/30 bg-red-500/10 text-red-300",
 };
 
-/* ── Badge ───────────────────────────────────────────────────────────────── */
-
 export function JobBadge({
   job,
   className,
@@ -58,9 +44,6 @@ export function JobBadge({
   const meta = JOB_STATE_PRESENTATION[job.state];
   const Icon = ICON[job.state];
 
-  // Queue position is the single most useful thing to show on a waiting job,
-  // so it is promoted into the badge itself rather than buried in the detail
-  // panel below.
   const suffix =
     job.state === "queued" && job.position ? ` · #${job.position}` : "";
 
@@ -86,8 +69,6 @@ export function JobBadge({
   );
 }
 
-/* ── Detail panel ────────────────────────────────────────────────────────── */
-
 function elapsed(from?: number | null, to?: number | null): string | null {
   if (!from) return null;
   const end = to ?? Date.now() / 1000;
@@ -97,15 +78,6 @@ function elapsed(from?: number | null, to?: number | null): string | null {
   return `${mins}m ${secs % 60}s`;
 }
 
-/**
- * The explanatory block shown beneath a case's headline while it is being
- * processed, and after it fails.
- *
- * Returns null for a plain successful run: once a verdict is on screen, how
- * many attempts it took is noise. A cache hit is the exception — that one is
- * worth stating, because it explains why a result appeared instantly and
- * tells the operator the verdict was not recomputed for this upload.
- */
 export function JobStatusPanel({ job }: { job?: JobState | null }) {
   if (!job) return null;
   if (job.state === "succeeded") return null;

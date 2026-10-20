@@ -3,9 +3,6 @@ import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import "./globals.css";
 import Providers from "./components/providers";
 
-/* IBM Plex: an engineering typeface with a technical-document character,
-   which suits a forensic instrument better than a consumer UI face. Sans
-   carries headings and prose; Mono carries every score, hash and case id. */
 const plexSans = IBM_Plex_Sans({
   variable: "--font-plex-sans",
   subsets: ["latin"],

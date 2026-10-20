@@ -1,16 +1,5 @@
 "use client";
 
-/* ============================================================================
-   DEEP TRUTH — QUEUE HEALTH
-   ----------------------------------------------------------------------------
-   System-wide view of the orchestration layer: how deep the backlog is, how
-   many workers are alive, and how much work the cache is saving.
-
-   The failure this panel is really for is the quiet one. Without workers, the
-   API still accepts uploads and every case sits at "processing" indefinitely,
-   which is indistinguishable from slow analysis unless something says so.
-   ========================================================================= */
-
 import { AlertTriangle, Cpu, Database, Layers, Zap } from "lucide-react";
 
 import { Panel, PanelHeading } from "@/app/components/Primitives";
@@ -20,10 +9,6 @@ import { cn } from "@/app/lib/utils";
 export function QueuePanel({ className }: { className?: string }) {
   const { data, isError, isPending } = useQueueOverview();
 
-  // Three distinct states, and conflating them is actively misleading: before
-  // the first response resolves we know nothing yet, which is not the same as
-  // knowing the API is down. Reporting "unreachable" during normal startup
-  // would send an operator to debug a backend that is fine.
   if (isPending) {
     return (
       <Panel className={cn("overflow-hidden", className)}>
@@ -60,8 +45,6 @@ export function QueuePanel({ className }: { className?: string }) {
         }
       />
 
-      {/* Operator-facing warnings come from the server so the threshold logic
-          lives in one place rather than being re-derived in the client. */}
       {(!data.redisOnline || data.message) && (
         <div
           className={cn(

@@ -1,12 +1,3 @@
-"""Audio preprocessor.
-
-Audio: we already know the universal first step for audio inputs is to
-normalise to a 16 kHz mono WAV, so we do that. The model-specific feature
-extraction (mel spectrograms etc.) lives in the audio inferencer.
-
-The image preprocessor has moved to its own file (preprocessors/image.py)
-now that it produces both whole-image and MTCNN-cropped branches.
-"""
 from __future__ import annotations
 import json
 import logging
@@ -20,6 +11,7 @@ from ..demux import extract_audio_wav
 log = logging.getLogger(__name__)
 
 
+# the real audio preprocessor: 16 kHz mono wav via ffmpeg
 class AudioPreprocessor(Preprocessor):
     name = "audio"
 

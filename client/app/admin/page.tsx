@@ -1,15 +1,5 @@
 "use client";
 
-/* ============================================================================
-   DEEP TRUTH — SYSTEM CONFIGURATION
-   ----------------------------------------------------------------------------
-   The backend exposes no configuration endpoints: fusion weights live in
-   app/registry.py, thresholds in analyser._status(), and file limits in
-   the server's environment. So this page reports state rather than pretending
-   to change it — every value is labelled with where it's actually set, and
-   nothing here renders a control that would silently do nothing.
-   ========================================================================= */
-
 import { useMemo } from "react";
 import {
   Activity,
@@ -38,16 +28,11 @@ import { cn } from "@/app/lib/utils";
 import { RISK_BANDS } from "@/app/shared/schema";
 import { readAnalysis } from "@/app/lib/analysis";
 
-/* What app/registry.py actually registers. Each case is routed to exactly one
-   engine by its media type — there is no cross-modal fusion step in this
-   backend, so this panel reports engine health rather than blend weights. */
 interface EngineRow {
   key: "video" | "image" | "audio";
   module: string;
   label: string;
   detail: string;
-  /** true/false when fixed at build time; null when resolved at runtime
-      from whether the server actually produced readings. */
   real: boolean | null;
 }
 
@@ -71,9 +56,6 @@ const ENGINES: EngineRow[] = [
     module: "M6",
     label: "Audio forensics",
     detail: "WavLM-Large + 3-layer head (ASVspoof 2019 LA)",
-    // Audio is the one engine whose live/stub state is decided at runtime by
-    // DEEPTRUTH_AUDIO_CHECKPOINT rather than fixed at build time, so it is
-    // resolved from the case data below instead of hard-coded here.
     real: null,
   },
 ];
@@ -83,9 +65,6 @@ export default function AdminPage() {
   const { data: stats } = useStats();
   const { data: list } = useCases({ pageSize: 50 });
 
-  /* How each engine has actually behaved across recent cases: how many it was
-     handed, and how many of those produced a usable (non-zero confidence)
-     reading. Read straight from the rows the backend wrote. */
   const engineActivity = useMemo(() => {
     const seen = new Map<string, { runs: number; contributing: number }>();
 
@@ -114,7 +93,6 @@ export default function AdminPage() {
         description="Live state of the detection service and the settings it's running with."
       />
 
-      {/* ── Service vitals ────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatTile
           label="Analysis engine"
@@ -162,7 +140,6 @@ export default function AdminPage() {
       )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* ── Engine status ───────────────────────────────────────────────── */}
         <Panel className="overflow-hidden">
           <PanelHeading
             icon={Sparkles}
@@ -172,8 +149,6 @@ export default function AdminPage() {
           <div className="space-y-5 p-5">
             {ENGINES.map((e) => {
               const activity = engineActivity.get(e.key);
-              // For audio, "live" is whatever the server actually did: if any
-              // settled case produced a usable reading, a checkpoint is loaded.
               const isReal =
                 e.real === null
                   ? activity != null && activity.contributing > 0
@@ -239,7 +214,6 @@ export default function AdminPage() {
           </div>
         </Panel>
 
-        {/* ── Decision thresholds ─────────────────────────────────────────── */}
         <Panel className="overflow-hidden">
           <PanelHeading
             icon={SlidersHorizontal}
@@ -300,7 +274,6 @@ export default function AdminPage() {
         </Panel>
       </div>
 
-      {/* ── Endpoints & accepted formats ──────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Panel className="p-5">
           <SectionRule label="Service endpoints" />
@@ -345,7 +318,6 @@ export default function AdminPage() {
         </Panel>
       </div>
 
-      {/* ── Model registry ────────────────────────────────────────────────── */}
       <Panel className="p-5">
         <SectionRule label="Pipeline modules" />
         <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">

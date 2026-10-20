@@ -1,5 +1,3 @@
-"""Health check endpoint."""
-
 from fastapi import APIRouter, Depends
 from app.models import HealthResponse
 from app.database import DB_PATH, get_db
@@ -13,11 +11,6 @@ import os
 router = APIRouter()
 
 
-# Limited despite being a health check, because it is not the cheap endpoint it
-# looks like: `worker_snapshot()` issues three broadcast control RPCs to the
-# Celery pool per call. Unlimited, it is a way to make the workers do the
-# caller's work for them. The read budget is far above any monitoring probe's
-# rate.
 @router.get("/health", response_model=HealthResponse,
             dependencies=[Depends(ratelimit.read)])
 async def health():
@@ -30,20 +23,14 @@ async def health():
     except Exception as exc:
         db_status = f"error: {exc}"
 
-    # Redis and the worker pool are now hard dependencies of the upload path
-    # (POST /cases returns 503 without them), so a health check that reports
-    # only the database would call the service healthy while it is unable to
-    # accept a single case.
     redis_ok = ping()
-    # Off the event loop: the inspect blocks for seconds when no worker
-    # answers, and on the loop that stalled every other request with it.
     workers = (await run_in_threadpool(cached_worker_snapshot)) if redis_ok else {"online": 0}
 
     if db_status != "ok" or not redis_ok:
+        # db or redis is down
         overall = "degraded"
+    # idle: uploads queue up but nothing runs them
     elif workers.get("online", 0) == 0:
-        # Uploads are still accepted — they queue, and run when a worker
-        # appears — so this is not "down", but nothing is being processed.
         overall = "idle"
     else:
         overall = "ok"

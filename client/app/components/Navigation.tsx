@@ -1,14 +1,5 @@
 "use client";
 
-/* ============================================================================
-   DEEP TRUTH — CONSOLE NAVIGATION
-   ----------------------------------------------------------------------------
-   One nav definition drives both the desktop rail and the mobile drawer, so a
-   route can never appear in one and not the other. Paths are lowercase
-   throughout; the previous mixed-case set (/Dashboard vs /dashboard) 404'd on
-   mobile because the two navs disagreed.
-   ========================================================================= */
-
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -33,13 +24,10 @@ import { useAuth } from "@/app/hooks/use-auth";
 import { useHealth } from "@/app/hooks/use-cases";
 import { cn } from "@/app/lib/utils";
 
-/* ── Route map ───────────────────────────────────────────────────────────── */
-
 interface NavItem {
   href: string;
   label: string;
   icon: LucideIcon;
-  /** Match nested routes, e.g. /cases/CASE-123 highlights "Case History". */
   prefix?: boolean;
 }
 
@@ -73,8 +61,6 @@ function isActive(pathname: string, item: NavItem) {
   return item.prefix ? pathname.startsWith(item.href) : pathname === item.href;
 }
 
-/* ── Brand ───────────────────────────────────────────────────────────────── */
-
 function Brand() {
   return (
     <Link href="/" className="flex items-center gap-3">
@@ -89,11 +75,7 @@ function Brand() {
   );
 }
 
-/* ── Engine status ───────────────────────────────────────────────────────────
-   Names what the operator cares about — "Analysis engine" — not the plumbing
-   behind it.
-   ------------------------------------------------------------------------- */
-
+// online only when the api reports at least one worker as well
 function EngineStatus() {
   const { data, isError, isLoading } = useHealth();
 
@@ -135,8 +117,6 @@ function EngineStatus() {
   );
 }
 
-/* ── Nav list ────────────────────────────────────────────────────────────── */
-
 function NavList({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
   return (
     <nav className="space-y-6">
@@ -176,8 +156,6 @@ function NavList({ pathname, onNavigate }: { pathname: string; onNavigate?: () =
     </nav>
   );
 }
-
-/* ── Operator card ───────────────────────────────────────────────────────── */
 
 function OperatorCard({ onNavigate }: { onNavigate?: () => void }) {
   const { operator, initials, isAuthenticated, signOut } = useAuth();
@@ -219,8 +197,6 @@ function OperatorCard({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
-/* ── Desktop rail ────────────────────────────────────────────────────────── */
-
 export function Sidebar() {
   const pathname = usePathname();
 
@@ -241,8 +217,6 @@ export function Sidebar() {
     </aside>
   );
 }
-
-/* ── Mobile drawer ───────────────────────────────────────────────────────── */
 
 export function MobileNav() {
   const pathname = usePathname();
@@ -291,10 +265,6 @@ export function MobileNav() {
     </>
   );
 }
-
-/* ── Public header, landing page only ───────────────────────────────────────
-   In-page anchors for the landing sections, plus the two ways into the
-   product: the console (case history, dashboard) and a straight upload. */
 
 const PUBLIC_LINKS = [
   { href: "#detectors", label: "Detectors" },

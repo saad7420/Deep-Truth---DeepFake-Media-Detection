@@ -1,26 +1,10 @@
 @import "tailwindcss";
 
-/* ============================================================================
-   DEEP TRUTH — FORENSIC LAB DESIGN SYSTEM
-   A digital-forensics instrument, not a sci-fi dashboard: deep navy ink,
-   one signal-cyan accent for interaction, monospace for every measurement,
-   and verdict colours reserved strictly for outcomes.
-
-   The default Tailwind `indigo`, `slate` and `sky` palettes are redefined
-   below, so every existing `bg-indigo-600` / `text-slate-400` in the app
-   picks up the new identity without touching each component:
-     indigo = the accent, slate = the neutral ink, sky = processing state.
-   ========================================================================= */
-
 @theme {
-  /* ── Typeface roles ──────────────────────────────────────────────────── */
   --font-display: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
   --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-plex-mono), ui-monospace, "SFMono-Regular", monospace;
 
-  /* ── Accent: signal cyan (replaces indigo) ──────────────────────────────
-     600/700 sit a step deeper than stock cyan so white button text keeps
-     AA contrast (#0e7490 behind white text is 5.4:1). */
   --color-indigo-50:  #ecfeff;
   --color-indigo-100: #cffafe;
   --color-indigo-200: #a5f3fc;
@@ -33,7 +17,6 @@
   --color-indigo-900: #123f52;
   --color-indigo-950: #082f3e;
 
-  /* ── Neutral ink: navy (replaces slate) ─────────────────────────────── */
   --color-slate-50:  #f4f6fa;
   --color-slate-100: #e6eaf2;
   --color-slate-200: #cdd5e3;
@@ -46,8 +29,6 @@
   --color-slate-900: #121a2a;
   --color-slate-950: #0a101d;
 
-  /* ── Processing state: soft violet (replaces sky, which is too close to
-     the cyan accent to read as a separate state) ─────────────────────── */
   --color-sky-100: #e0e7ff;
   --color-sky-200: #c7d2fe;
   --color-sky-300: #a5b4fc;
@@ -59,7 +40,6 @@
   --color-sky-900: #312e81;
   --color-sky-950: #1e1b4b;
 
-  /* ── Brand aliases ───────────────────────────────────────────────────── */
   --color-brand-50:  #ecfeff;
   --color-brand-300: #67e8f9;
   --color-brand-400: #22d3ee;
@@ -67,39 +47,32 @@
   --color-brand-600: #0e7490;
   --color-brand-700: #155e75;
 
-  /* ── Verdict semantics — one colour per forensic outcome ─────────────── */
-  --color-verdict-authentic:    #34d399;  /* emerald-400 */
-  --color-verdict-inconclusive: #fbbf24;  /* amber-400   */
-  --color-verdict-manipulated:  #f87171;  /* red-400     */
-  --color-verdict-processing:   #818cf8;  /* violet      */
-  --color-verdict-failed:       #8190a8;  /* ink-400     */
+  --color-verdict-authentic:    #34d399;
+  --color-verdict-inconclusive: #fbbf24;
+  --color-verdict-manipulated:  #f87171;
+  --color-verdict-processing:   #818cf8;
+  --color-verdict-failed:       #8190a8;
 
-  /* ── Paper: the light editorial sections of the public landing page ──── */
   --color-paper:       #f6f5f1;
   --color-paper-line:  #e4e2db;
   --color-paper-ink:   #111827;
   --color-paper-mute:  #5b6476;
   --color-paper-accent: #0e7490;
 
-  /* ── Substrate ───────────────────────────────────────────────────────── */
   --color-substrate:  #0a101d;
   --color-surface:    #121a2a;
   --color-hairline:   #1d2536;
 }
 
-/* ── Root variables ─────────────────────────────────────────────────────── */
 :root {
   --background: #0a101d;
   --foreground: #f4f6fa;
 
-  /* Instrument-like: tighter corners than a consumer app. */
   --radius: 0.5rem;
 
-  /* Accent glow — primary actions and the active nav item only */
   --glow-brand: 0 0 0 1px rgba(34, 211, 238, 0.25), 0 0 20px rgba(34, 211, 238, 0.18);
   --glow-brand-strong: 0 0 0 1px rgba(34, 211, 238, 0.4), 0 0 32px rgba(34, 211, 238, 0.28);
 
-  /* shadcn/ui token bridge (dark-only product) */
   --card: #121a2a;
   --card-foreground: #f4f6fa;
   --popover: #121a2a;
@@ -119,7 +92,6 @@
   --ring: #22d3ee;
 }
 
-/* ── Base ───────────────────────────────────────────────────────────────── */
 * {
   border-color: var(--border);
 }
@@ -142,15 +114,12 @@ body {
   color: #fff;
 }
 
-/* ── Typography utilities ───────────────────────────────────────────────── */
 .font-display {
   font-family: var(--font-display);
   font-weight: 600;
   letter-spacing: -0.015em;
 }
 
-/* Small uppercase label used above section titles and on data captions.
-   Encodes hierarchy, not decoration — every eyebrow names its section. */
 .eyebrow {
   font-family: var(--font-mono);
   font-size: 0.625rem;
@@ -161,15 +130,11 @@ body {
   color: #67758f;
 }
 
-/* Tabular figures for every score, percentage and count in the product. */
 .tabular {
   font-variant-numeric: tabular-nums;
   font-family: var(--font-mono);
 }
 
-/* ── Signature: lab graph paper ─────────────────────────────────────────────
-   A fine 24px grid with a stronger line every 120px, like the measurement
-   paper under an evidence photo. Faint enough to never compete with data. */
 .grid-bg {
   background-image:
     linear-gradient(to right, rgba(34, 211, 238, 0.045) 1px, transparent 1px),
@@ -180,7 +145,6 @@ body {
   background-position: center center;
 }
 
-/* Ambient cyan wash behind page headers. */
 .aurora {
   background-image: radial-gradient(
     ellipse 70% 45% at 50% -15%,
@@ -196,7 +160,6 @@ body {
 .glow-brand { box-shadow: var(--glow-brand); }
 .glow-brand-strong { box-shadow: var(--glow-brand-strong); }
 
-/* Instrument panel: solid ink surface with a faint top highlight. */
 .panel {
   background-color: rgba(18, 26, 42, 0.72);
   border: 1px solid var(--color-hairline);
@@ -213,7 +176,6 @@ body {
   background-color: rgba(18, 26, 42, 0.9);
 }
 
-/* Evidence reticle: corner brackets around media under examination. */
 .reticle { position: relative; }
 .reticle::before,
 .reticle::after {
@@ -228,8 +190,6 @@ body {
 .reticle::before { top: 6px; left: 6px; border-top: 1.5px solid; border-left: 1.5px solid; }
 .reticle::after { bottom: 6px; right: 6px; border-bottom: 1.5px solid; border-right: 1.5px solid; }
 
-/* ── Landing hero: illustrated real-vs-fake comparison ──────────────────────
-   Pure CSS so the page ships no stock photography of real people. */
 .lp-frame { position: relative; aspect-ratio: 4 / 5; overflow: hidden; border-radius: 8px;
   background: linear-gradient(160deg, #1f3346, #0e1a28); }
 .lp-face { position: absolute; left: 50%; top: 44%; width: 52%; aspect-ratio: 3 / 4;
@@ -251,7 +211,6 @@ body {
   background-size: 56px 56px;
   mask-image: radial-gradient(ellipse at 70% 40%, #000 30%, transparent 75%); }
 
-/* ── Scanline sweep — used only on media under active analysis ──────────── */
 @keyframes scan {
   0%   { transform: translateY(-100%); opacity: 0; }
   12%  { opacity: 1; }
@@ -268,7 +227,6 @@ body {
   animation: scan 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
-/* ── Motion ─────────────────────────────────────────────────────────────── */
 @keyframes fade-up {
   from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -302,7 +260,6 @@ body {
   animation: shimmer 1.8s infinite;
 }
 
-/* ── Accessibility floor ────────────────────────────────────────────────── */
 :focus-visible {
   outline: 2px solid var(--color-brand-400);
   outline-offset: 2px;
@@ -320,7 +277,6 @@ body {
   }
 }
 
-/* ── Scrollbar ──────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: #0a101d; }
 ::-webkit-scrollbar-thumb {
@@ -330,7 +286,6 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover { background: #2e384c; }
 
-/* ── Print — the forensic report must survive being exported to PDF ─────── */
 @media print {
   :root { --background: #fff; --foreground: #0f172a; }
   body { background: #fff !important; color: #0f172a !important; }

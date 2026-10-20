@@ -1,7 +1,3 @@
-"""
-App factory — wires up CORS, routes, startup/shutdown hooks.
-"""
-
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,7 +10,6 @@ from app.routers import cases, health, queue
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    """Initialise the SQLite database on startup."""
     await init_db()
     yield
 
@@ -30,19 +25,7 @@ def create_app() -> FastAPI:
         openapi_url="/api/openapi.json",
     )
 
-    # ── CORS ─────────────────────────────────────────────────────────────────
-    # Two classes of caller reach this API from a browser:
-    #   1. the Next.js console, on a normal http origin (ALLOWED_ORIGINS)
-    #   2. the Chrome extension's service worker, whose Origin header is
-    #      `chrome-extension://<id>` — an id that changes every time the
-    #      unpacked extension is reloaded, so it can't be enumerated in .env
-    #      and is matched by pattern instead.
-    #
-    # `allow_credentials=True` alongside `allow_origins=["*"]` is rejected by
-    # every browser: the spec forbids echoing the wildcard on a credentialed
-    # request. The wildcard therefore drops credentials rather than silently
-    # producing a config that fails at runtime. Nothing here uses cookies —
-    # the extension sends no credentials — so this costs nothing.
+    # extension origins change on every reload, so they are matched by pattern
     raw_origins = os.getenv("ALLOWED_ORIGINS", "*")
     wildcard = raw_origins.strip() == "*"
     origins = [] if wildcard else [o.strip() for o in raw_origins.split(",") if o.strip()]
@@ -62,21 +45,17 @@ def create_app() -> FastAPI:
         expose_headers=["X-Request-ID"],
     )
 
-    # ── Static file serving (uploaded evidence files) ────────────────────────
     upload_dir = os.getenv("UPLOAD_DIR", "uploads")
     os.makedirs(upload_dir, exist_ok=True)
+    # evidence files
     application.mount("/uploads", StaticFiles(directory=upload_dir), name="uploads")
 
-    # Rendered artifact maps (M7 FE-3). Its own mount rather than a
-    # subdirectory of uploads/: these are derived files, regenerable from the
-    # preprocessing cache, and safe to delete wholesale — which is emphatically
-    # not true of the evidence a case is built on.
     artifact_dir = os.getenv("ARTIFACT_DIR", "artifacts")
     os.makedirs(artifact_dir, exist_ok=True)
+    # derived heat maps, safe to delete
     application.mount("/artifacts", StaticFiles(directory=artifact_dir),
                       name="artifacts")
 
-    # ── Routers ───────────────────────────────────────────────────────────────
     application.include_router(health.router, prefix="/api", tags=["health"])
     application.include_router(cases.router, prefix="/api", tags=["cases"])
     application.include_router(queue.router, prefix="/api", tags=["queue"])

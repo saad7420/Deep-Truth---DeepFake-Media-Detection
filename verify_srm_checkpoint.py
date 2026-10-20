@@ -1,28 +1,4 @@
 #!/usr/bin/env python3
-"""
-Verify a trained SRM checkpoint, standalone — no deeptruth_pipeline repo
-required. The filter bank and patch-based feature extraction are inlined
-below (same reasoning as verify_audio_standalone.py: this should run
-anywhere, not just inside a full pipeline checkout).
-
-    pip install torch pillow scipy
-    python verify_srm_checkpoint.py /path/to/final_model
-    python verify_srm_checkpoint.py /path/to/final_model --image sample.jpg
-
-A strict load proves the checkpoint's shapes and keys match this
-architecture. --image additionally runs one real inference — including the
-feature normalisation the checkpoint was trained with — so you see an
-actual score, not just a successful load.
-
-CONTRACT
-─────────
-45-dim patch-based features (5 filters x mean/std/within-image-outlier,
-tiled over a 7x7 grid — see preprocessors/srm_filters.py), standardised
-with the exact feature_mean/feature_std train_srm_casia.py saved into
-metadata.json. Both the architecture AND the normalisation stats are
-required for a checkpoint's predictions to mean anything; a checkpoint
-missing either is treated as unusable, not silently scored wrong.
-"""
 from __future__ import annotations
 
 import argparse
@@ -38,9 +14,6 @@ HEAD_DIMS = [FEATURE_DIM, 32, 16, 2]
 GREEN, RED, YELLOW, DIM, RESET = (
     "\033[32m", "\033[31m", "\033[33m", "\033[2m", "\033[0m")
 
-
-# ── Filter bank + patch feature extraction, inlined ─────────────────────────
-# Identical to preprocessors/srm_filters.py — kept in sync by hand.
 
 _KV = np.array([
     [-1,  2, -2,  2, -1], [ 2, -6,  8, -6,  2], [-2,  8,-12,  8, -2],
@@ -60,7 +33,7 @@ _BANK = np.stack([_KV, _directional(0, 1), _directional(1, 0),
                   _directional(1, 1), _directional(1, -1)])
 _NAMES = ["kv", "horiz", "vert", "diag", "adiag"]
 _TRUNCATION = 3.0
-_PATCH_SIZE = 32  # 224/32 = 7x7 grid
+_PATCH_SIZE = 32
 
 
 def _base_stats(gray: np.ndarray) -> np.ndarray:
@@ -78,10 +51,6 @@ def _base_stats(gray: np.ndarray) -> np.ndarray:
 
 
 def _feature_vector(gray: np.ndarray) -> np.ndarray:
-    """45-dim: patch-mean / patch-std / within-image-outlier per base stat.
-    See preprocessors/srm_filters.py's module docstring for why patch-based
-    pooling is used instead of a plain whole-image average — global pooling
-    was measured to wash a local splice's signal out almost entirely."""
     h, w = gray.shape
     margin = 4
     patches = []
@@ -140,7 +109,7 @@ def build_model():
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__,
+    ap = argparse.ArgumentParser(description="Verify a trained SRM checkpoint, standalone.",
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("checkpoint")
     ap.add_argument("--image", default=None)
@@ -201,7 +170,7 @@ def main() -> None:
     print("\n[1] Reading the state dict")
     try:
         state = torch.load(pt, map_location="cpu")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         sys.exit(f"{RED}FAIL{RESET} torch.load failed: {exc}")
 
     if any(k.startswith("module.") for k in state):

@@ -1,27 +1,5 @@
 #!/usr/bin/env python3
-"""
-Trace exactly why one video got the verdict it did.
 
-    python diagnose_video.py /path/to/clip.mp4
-
-`cli.py` gives you the answer; this gives you the reasoning. It walks the same
-path the server does — decode, face detection, per-checkpoint scoring, ensemble
-— and reports what happened at each stage, including the two places a video can
-silently end up "inconclusive":
-
-  1. Something threw before any model scored. The engine catches it and returns
-     a neutral result, which the API reports as inconclusive at exactly 50.0%.
-     A missing PyAV install and an undecodable file both land here.
-
-  2. Fewer than MIN_FACE_FRAMES faces were found. The five face-specialist
-     checkpoints are then discarded entirely and the verdict comes from the
-     single genvideo checkpoint. This is a cliff, not a slope: at 6 detected
-     faces all five specialists count, at 5 none of them do.
-
-Long videos are much more likely to hit (2), because exactly 16 frames are
-sampled across the whole duration no matter how long it runs. A subject who is
-on camera for a third of a five-minute clip can easily land under the cut.
-"""
 from __future__ import annotations
 
 import logging
@@ -47,7 +25,7 @@ def die(msg: str, fix: str) -> None:
 
 def main() -> None:
     if len(sys.argv) < 2:
-        print(__doc__)
+        print("usage: python diagnose_video.py /path/to/clip.mp4")
         sys.exit(2)
 
     src = Path(sys.argv[1]).expanduser().resolve()
@@ -62,27 +40,13 @@ def main() -> None:
     print(f"file  {src.name}")
     print(f"size  {size_mb:.1f} MB")
 
-    # ── Dependencies ─────────────────────────────────────────────────────────
     head("1. Dependencies on the video path")
 
     try:
         import peft
 
         print(f"{GREEN}ok{RESET}    peft {peft.__version__}")
-        # The active bug as of this diagnostic: TaskType.FEATURE_EXTRACTION
-        # has no vision-specific wrapper in PEFT, so get_peft_model() falls
-        # back to the generic base PeftModel, whose forward() is hardcoded
-        # for text models and unconditionally injects input_ids into the
-        # call to the wrapped model — ViViT/ViT reject that outright with
-        # "got an unexpected keyword argument 'input_ids'". This has been
-        # observed specifically with peft 0.20.0; server/requirements.txt
-        # only pins >=0.19 with no upper bound, so it was never validated
-        # against 0.20.x. The fix (already applied in inferencers/video.py
-        # and inferencers/image.py) calls model.get_base_model() instead of
-        # model directly, bypassing the broken wrapper while keeping the
-        # LoRA weights active. get_base_model() is one of PEFT's oldest,
-        # most stable public methods, so this checks that it still exists
-        # under whatever version is installed here.
+
         from peft import PeftModel
 
         if hasattr(PeftModel, "get_base_model"):
@@ -100,7 +64,7 @@ def main() -> None:
             "pip install -r server/requirements.txt")
 
     try:
-        import av  # noqa: F401
+        import av
 
         print(f"{GREEN}ok{RESET}    PyAV present — video decoding available")
     except ImportError:
@@ -112,7 +76,7 @@ def main() -> None:
         )
 
     try:
-        import facenet_pytorch  # noqa: F401
+        import facenet_pytorch
 
         face_available = True
         print(f"{GREEN}ok{RESET}    facenet-pytorch present — face branch available")
@@ -138,7 +102,6 @@ def main() -> None:
     except ImportError:
         die("torch is not installed", "pip install -r server/requirements.txt")
 
-    # ── Decode ───────────────────────────────────────────────────────────────
     head("2. Decode and frame sampling")
 
     from deeptruth_pipeline import train_bridge
@@ -154,7 +117,7 @@ def main() -> None:
         duration = float(container.duration / 1e6) if container.duration else None
         fps = float(stream.average_rate) if stream.average_rate else None
         container.close()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         die(f"PyAV could not open this file: {exc}",
             "re-encode it, e.g. ffmpeg -i input -c:v libx264 output.mp4")
 
@@ -183,7 +146,6 @@ def main() -> None:
     print(f"\n{GREEN}ok{RESET}    decoded {len(raw)} frames in {time.time() - t0:.1f}s "
           f"({raw.shape[2]}x{raw.shape[1]})")
 
-    # ── Face detection ───────────────────────────────────────────────────────
     head("3. Face detection")
 
     from deeptruth_pipeline.config import MIN_FACE_FRAMES
@@ -196,7 +158,7 @@ def main() -> None:
             detector = pipeline._get_face_detector()
             boxes, _ = detector.detect([Image.fromarray(f) for f in raw])
             n_face = sum(1 for b in boxes if b is not None and len(b) > 0)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             print(f"{YELLOW}warn{RESET}  face detection failed: {exc}")
 
     trusted = n_face >= MIN_FACE_FRAMES
@@ -217,7 +179,6 @@ def main() -> None:
             print(f"{DIM}      {n_face} face(s) were found — just under the cut-off "
                   f"of {MIN_FACE_FRAMES}.{RESET}")
 
-    # ── Scoring ──────────────────────────────────────────────────────────────
     head("4. Per-checkpoint scores")
 
     from deeptruth_pipeline.config import CHECKPOINT_DIR
@@ -227,7 +188,7 @@ def main() -> None:
     inf = VideoInferencer(checkpoint_dir=CHECKPOINT_DIR)
     try:
         inf._setup()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         die(f"could not initialise the inferencer: {exc}",
             "run verify_setup.py — most likely the checkpoints aren't found")
 
@@ -238,7 +199,7 @@ def main() -> None:
     if n_face > 0:
         try:
             face_frames = pipeline._crop_faces(raw)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             print(f"{YELLOW}warn{RESET}  face cropping failed: {exc}")
 
     per_ckpt: dict[str, float] = {}
@@ -257,14 +218,13 @@ def main() -> None:
             print(f"      {ckpt['name']:<20} {tone}{p * 100:5.1f}%{RESET} "
                   f"{tone}{bar}{RESET} {DIM}({ckpt['preprocess']}, "
                   f"{time.time() - t:.1f}s){RESET}")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             print(f"      {ckpt['name']:<20} {RED}FAILED{RESET} {exc}")
 
     if not per_ckpt:
         die("no checkpoint produced a score",
             "this is what makes a case inconclusive at exactly 50.0%")
 
-    # ── Decision ─────────────────────────────────────────────────────────────
     head("5. Ensemble decision")
 
     d = ensemble_decide(per_ckpt, n_face)
@@ -298,7 +258,6 @@ def main() -> None:
     print(f"\n      risk score     {BOLD}{colour}{risk:.1f}%{RESET}")
     print(f"      verdict        {BOLD}{colour}{verdict}{RESET}")
 
-    # ── What to do ───────────────────────────────────────────────────────────
     head("6. Reading this result")
 
     if not trusted and any(

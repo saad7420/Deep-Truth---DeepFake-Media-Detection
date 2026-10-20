@@ -1,20 +1,4 @@
 #!/usr/bin/env python3
-"""
-Trace SRM's noise-analysis pass on one file, for either an image or a
-video's sampled frames.
-
-    python diagnose_srm.py path\\to\\photo.jpg
-    python diagnose_srm.py path\\to\\clip.mp4
-
-Same spirit as diagnose_video.py / diagnose_image.py: fast pass/fail, no
-need to go through a full server case to see what SRM actually did.
-
-Unlike those two, SRM has a real, meaningful "not broken, just not trained
-yet" state — this script tells you which one you're looking at. Before
-DEEPTRUTH_SRM_CHECKPOINT is set, seeing real feature numbers here (not an
-error) means feature extraction is fully working and the only missing
-piece is training.
-"""
 from __future__ import annotations
 
 import sys
@@ -38,7 +22,7 @@ def die(msg: str, fix: str) -> None:
 
 def main() -> None:
     if len(sys.argv) < 2:
-        print(__doc__)
+        print("usage: python diagnose_srm.py /path/to/photo.jpg  (or a video file)")
         sys.exit(2)
 
     src = Path(sys.argv[1]).expanduser().resolve()
@@ -49,12 +33,11 @@ def main() -> None:
     print("=" * 66)
     print(f"file  {src.name}")
 
-    # ── Dependencies ─────────────────────────────────────────────────────────
     head("1. Dependencies")
 
     try:
-        import numpy  # noqa: F401
-        import scipy  # noqa: F401
+        import numpy
+        import scipy
 
         print(f"{GREEN}ok{RESET}    numpy + scipy — feature extraction needs "
               f"nothing else")
@@ -63,7 +46,7 @@ def main() -> None:
 
     checkpoint_configured = False
     try:
-        import torch  # noqa: F401
+        import torch
 
         from deeptruth_pipeline.config import SRM_CHECKPOINT, SRM_THRESHOLD
 
@@ -83,7 +66,6 @@ def main() -> None:
               f"extraction still works (it needs\n      only numpy/scipy), "
               f"but no checkpoint could load even if configured.")
 
-    # ── Get grayscale frame(s) ───────────────────────────────────────────────
     head("2. Preparing input")
 
     from deeptruth_pipeline.config import VIDEO_EXTS, IMAGE_EXTS
@@ -119,7 +101,6 @@ def main() -> None:
         print(f"      video — {len(frames)} frames sampled for SRM "
               f"(of {full.shape[0]} decoded)")
 
-    # ── Real feature extraction ─────────────────────────────────────────────
     head("3. Feature extraction (real, runs regardless of checkpoint)")
 
     from deeptruth_pipeline.preprocessors.srm_filters import patch_feature_vector, patch_feature_names
@@ -145,7 +126,6 @@ def main() -> None:
               f"is genuinely reading structure\n      from this file, not "
               f"producing placeholder output.")
 
-    # ── Classifier, if configured ────────────────────────────────────────────
     head("4. Classifier")
 
     if not checkpoint_configured:
@@ -194,7 +174,7 @@ def main() -> None:
         model.eval()
         print(f"{GREEN}ok{RESET}    checkpoint loads (strict=True), "
               f"normalisation stats present and correctly shaped")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         die(f"checkpoint failed to load: {exc}",
             "architecture drift between training and inferencers/srm.py — "
             "see that file's HEAD_DIMS")

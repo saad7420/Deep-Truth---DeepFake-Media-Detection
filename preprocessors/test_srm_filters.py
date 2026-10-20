@@ -1,15 +1,3 @@
-"""
-Numerical verification for preprocessors/srm_filters.py.
-
-Run directly (no pytest dependency needed, matches this repo's other
-throwaway-verification-script style):
-
-    python -m preprocessors.test_srm_filters
-
-Every assertion here checks an actual mathematical property by computing it,
-not by inspection — these are the same checks that were run interactively
-before this filter bank was committed to the pipeline.
-"""
 from __future__ import annotations
 
 import numpy as np
@@ -26,9 +14,6 @@ from .srm_filters import (
 
 
 def test_filters_are_zero_mean():
-    """Defining property of a high-pass/residual filter: a constant region
-    must produce exactly zero response, or it isn't actually suppressing
-    content."""
     bank = SRMFilterBank.default()
     const = np.full((32, 32), 128.0, dtype=np.float32)
     out = bank.apply(const)
@@ -40,8 +25,6 @@ def test_filters_are_zero_mean():
 
 
 def test_filters_discriminate_noise():
-    """The entire justification for using these as a forensic signal: they
-    must respond far more to local statistical texture than to smoothness."""
     rng = np.random.default_rng(0)
     bank = SRMFilterBank.default()
     smooth = np.full((64, 64), 128.0, dtype=np.float32)
@@ -56,10 +39,6 @@ def test_filters_discriminate_noise():
 
 
 def test_feature_vector_is_deterministic_and_ordered():
-    """A checkpoint trained against this feature layout must get the exact
-    same layout back at inference time, every time — this is the checkpoint
-    contract equivalent of what UNFREEZE_LAYERS/HEAD_DIMS are for the audio
-    module."""
     rng = np.random.default_rng(1)
     gray = rng.uniform(0, 255, (64, 64)).astype(np.float32)
 
@@ -74,7 +53,7 @@ def test_feature_vector_is_deterministic_and_ordered():
         f"misalign against the other")
 
     bank = SRMFilterBank.default()
-    expected_len = bank.n_filters * 3  # mean, std, sat_frac per filter
+    expected_len = bank.n_filters * 3
     assert len(v1) == expected_len, (
         f"expected {expected_len} features ({bank.n_filters} filters x 3 "
         f"stats), got {len(v1)}")
@@ -84,10 +63,6 @@ def test_feature_vector_is_deterministic_and_ordered():
 
 
 def test_extract_features_matches_vector():
-    """The dict and array forms must describe the same numbers in the same
-    order — extract_features() is for readable evidence/debugging,
-    feature_vector() is what a classifier consumes; they must never drift
-    apart."""
     rng = np.random.default_rng(2)
     gray = rng.uniform(0, 255, (48, 48)).astype(np.float32)
 
@@ -113,18 +88,14 @@ def test_to_grayscale_shape_and_range():
 
 
 def test_real_vs_synthetic_edge_case():
-    """A sharp, hard-edged rectangle (the kind a crude splice boundary
-    produces) must register a much stronger residual than natural smooth
-    gradients — this is the actual forensic mechanism, checked directly
-    rather than assumed."""
     bank = SRMFilterBank.default()
 
     natural = np.zeros((64, 64), dtype=np.float32)
     for i in range(64):
-        natural[i, :] = 100 + i * 0.5  # smooth gradient, no hard edges
+        natural[i, :] = 100 + i * 0.5
 
     spliced = natural.copy()
-    spliced[20:44, 20:44] = 200.0  # hard-edged inserted block
+    spliced[20:44, 20:44] = 200.0
 
     e_natural = np.abs(bank.apply(natural)).mean()
     e_spliced = np.abs(bank.apply(spliced)).mean()
@@ -137,24 +108,6 @@ def test_real_vs_synthetic_edge_case():
 
 
 def test_patch_pooling_beats_global_pooling_on_realistic_splice():
-    """The test that actually justifies patch_feature_vector()'s existence.
-
-    A too-easy synthetic splice (a huge, high-contrast hard-edged block)
-    would pass with either global or patch pooling and prove nothing. This
-    constructs a genuinely hard case instead: a small (60x60 in 224x224,
-    ~7% of the frame) splice with realistic between-photo variance — every
-    sample uses a different scene gradient and a different baseline noise
-    level, simulating different real cameras — which is what training
-    against real CASIA v2 data actually looks like.
-
-    Global pooling measurably fails this case (this is not hypothetical —
-    running real CASIA v2 through the whole-image feature_vector() and
-    training a classifier on it gave val EER ~48%, indistinguishable from
-    chance). Patch-based pooling, comparing each patch against the other
-    patches in its OWN image rather than against other photos, must show a
-    substantially larger effect size on the same synthetic setup, or this
-    redesign has no evidence behind it.
-    """
     from .srm_filters import feature_vector, patch_feature_vector, feature_names
 
     rng = np.random.default_rng(42)
@@ -181,15 +134,12 @@ def test_patch_pooling_beats_global_pooling_on_realistic_splice():
     authentic = [make_scene(False) for _ in range(n)]
     spliced = [make_scene(True) for _ in range(n)]
 
-    # Global pooling: worst-case single feature, matching what training
-    # actually saw.
     names = feature_names()
     kv_std_idx = names.index("kv_std")
     global_a = np.array([feature_vector(im)[kv_std_idx] for im in authentic])
     global_s = np.array([feature_vector(im)[kv_std_idx] for im in spliced])
     d_global = cohens_d(global_a, global_s)
 
-    # Patch pooling: the outlier feature for the same underlying statistic.
     patch_names = patch_feature_names()
     outlier_idx = patch_names.index("kv_std_poutlier")
     patch_a = np.array([patch_feature_vector(im)[outlier_idx] for im in authentic])

@@ -1,19 +1,5 @@
 "use client";
 
-/* ============================================================================
-   DEEP TRUTH — EXPORTABLE FORENSIC REPORT
-   ----------------------------------------------------------------------------
-   A print-first document rather than a console screen. "Export report" hands
-   off to the browser's own print-to-PDF, which keeps selectable text, working
-   links and correct pagination — all of which a client-side canvas capture
-   would lose, and none of which needs a server-side PDF service the backend
-   doesn't have.
-
-   The integrity line is a plain content digest over the fields shown, not a
-   cryptographic signature: it detects an altered copy of this document, and
-   the report says exactly that rather than implying more.
-   ========================================================================= */
-
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -93,7 +79,6 @@ export default function ReportPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 print:bg-white">
-      {/* Screen-only toolbar */}
       <div className="no-print sticky top-0 z-50 border-b border-slate-800 bg-slate-950/90 backdrop-blur">
         <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-3">
           <Link href={`/cases/${c.caseId}`}>
@@ -103,11 +88,6 @@ export default function ReportPage() {
             </Button>
           </Link>
           <div className="flex items-center gap-2">
-            {/* Print stays, because a browser's print dialog is still the
-                fastest route to paper and to an annotated copy. But the
-                default is now a real file: the server renders it, so a
-                report can be attached or archived without a person driving
-                a dialog. */}
             <Button
               variant="ghost"
               size="sm"
@@ -134,7 +114,6 @@ export default function ReportPage() {
       </div>
 
       <article className="mx-auto max-w-4xl px-6 py-10 print:max-w-none print:px-0 print:py-0">
-        {/* ── Masthead ────────────────────────────────────────────────────── */}
         <header className="mb-8 border-b border-slate-800 pb-6 print:border-slate-300">
           <div className="flex items-start justify-between gap-6">
             <div className="flex items-center gap-3">
@@ -163,7 +142,6 @@ export default function ReportPage() {
           </div>
         </header>
 
-        {/* ── Verdict ─────────────────────────────────────────────────────── */}
         <Section title="1 · Verdict">
           <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
@@ -198,7 +176,6 @@ export default function ReportPage() {
           )}
         </Section>
 
-        {/* ── Evidence ────────────────────────────────────────────────────── */}
         <Section title="2 · Evidence">
           <dl className="grid grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-3">
             <Field label="File name" value={c.fileName ?? "—"} />
@@ -209,9 +186,6 @@ export default function ReportPage() {
             <Field label="Submitted by" value={c.userId ?? "Unattributed"} />
           </dl>
 
-          {/* The map belongs in the exported document, not only on the console
-              screen. Without it the report handed to a journalist or a lawyer
-              carries the score but none of the visual evidence behind it. */}
           <ArtifactMapPanel
             map={summary?.evidence.artifact_map}
             originalUrl={resolveMediaUrl(c.fileUrl)}
@@ -219,7 +193,6 @@ export default function ReportPage() {
           />
         </Section>
 
-        {/* ── Engine result ───────────────────────────────────────────────── */}
         <Section title="3 · Engine result">
           {!summary ? (
             <p className="text-sm text-slate-500">
@@ -286,7 +259,6 @@ export default function ReportPage() {
           )}
         </Section>
 
-        {/* ── Checkpoint detail ───────────────────────────────────────────── */}
         {checkpoints.length > 0 && (
           <Section title="4 · Checkpoint detail">
             <p className="mb-3 text-xs text-slate-500">
@@ -319,14 +291,6 @@ export default function ReportPage() {
           </Section>
         )}
 
-        {/* ── Supplementary signals ─────────────────────────────────────────
-            Deliberately its own section, not folded into "Checkpoint
-            detail" above. These are additional evidence passes that do not
-            feed the primary verdict (currently: SRM noise analysis) — the
-            report previously had no separate section for these, so a
-            secondary-tier row like SRM sorted straight into the checkpoint
-            list by score and printed above every real adapter vote,
-            reading as if it were one of them. */}
         {secondarySignals.length > 0 && (
           <Section title={`${checkpoints.length > 0 ? "5" : "4"} · Supplementary signals`}>
             <p className="mb-3 text-xs text-slate-500">
@@ -359,7 +323,6 @@ export default function ReportPage() {
           </Section>
         )}
 
-        {/* ── Notes ───────────────────────────────────────────────────────── */}
         {c.notes && (
           <Section
             title={`${
@@ -372,7 +335,6 @@ export default function ReportPage() {
           </Section>
         )}
 
-        {/* ── Integrity ───────────────────────────────────────────────────── */}
         <footer className="mt-10 border-t border-slate-800 pt-5 print:border-slate-300">
           <p className="font-mono text-[10px] uppercase tracking-wider text-slate-500">
             Content digest (SHA-256)
@@ -394,8 +356,6 @@ export default function ReportPage() {
     </div>
   );
 }
-
-/* ── Report primitives ───────────────────────────────────────────────────── */
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (

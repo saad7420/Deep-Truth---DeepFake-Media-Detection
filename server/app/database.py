@@ -1,8 +1,3 @@
-"""
-Async SQLite database layer.
-Switch to PostgreSQL by replacing the DB_URL and driver.
-"""
-
 import os
 import aiosqlite
 
@@ -42,16 +37,15 @@ CREATE TABLE IF NOT EXISTS analysis_results (
 
 
 async def get_db() -> aiosqlite.Connection:
-    """Yield a connection; caller must close it."""
     conn = await aiosqlite.connect(DB_PATH)
     conn.row_factory = aiosqlite.Row
     return conn
 
 
 async def init_db() -> None:
-    """Create tables on first run."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
+        # lets the api and the workers share one sqlite file
         await db.execute("PRAGMA journal_mode=WAL;")
         await db.execute("PRAGMA foreign_keys=ON;")
         await db.execute(CREATE_CASES_TABLE)

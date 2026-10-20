@@ -1,24 +1,4 @@
 #!/usr/bin/env bash
-# =============================================================================
-# Deep Truth — one-command setup and run (Linux / macOS)
-#
-#   ./scripts/start.sh            check deps, install what's missing, run it all
-#   ./scripts/start.sh --check    report only, change nothing
-#   ./scripts/start.sh --stop     stop everything this script started
-#   ./scripts/start.sh --restart  stop then start
-#   ./scripts/start.sh --logs     follow all logs
-#   ./scripts/start.sh --status   what is running right now
-#
-# Flags:
-#   --yes            don't prompt before installing system packages
-#   --no-web         skip the Next.js console (API + worker only)
-#   --workers N      worker slots (default 2; each loads its own model copies)
-#
-# The stack is four processes: Redis, the FastAPI API, one or more Celery
-# workers, and the Next.js console. Starting them by hand means four terminals
-# and remembering that the worker does NOT hot-reload — which is the single
-# most common way to spend twenty minutes debugging code that is not running.
-# =============================================================================
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -41,6 +21,24 @@ info()  { printf "  ${C_DIM}%s${C_RESET}\n" "$*"; }
 step()  { printf "\n${C_BOLD}%s${C_RESET}\n" "$*"; }
 die()   { printf "\n${C_RED}%s${C_RESET}\n" "$*" >&2; exit 1; }
 
+usage() {
+  cat <<'EOF'
+Deep Truth: one-command setup and run (Linux / macOS)
+
+  ./scripts/start.sh            check deps, install what is missing, run it all
+  ./scripts/start.sh --check    report only, change nothing
+  ./scripts/start.sh --stop     stop everything this script started
+  ./scripts/start.sh --restart  stop then start
+  ./scripts/start.sh --logs     follow all logs
+  ./scripts/start.sh --status   what is running right now
+
+Flags:
+  --yes            do not prompt before installing system packages
+  --no-web         skip the Next.js console (API + worker only)
+  --workers N      worker slots (default 2; each loads its own model copies)
+EOF
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --check)   MODE="check" ;;
@@ -51,7 +49,7 @@ while [[ $# -gt 0 ]]; do
     --yes|-y)  ASSUME_YES=1 ;;
     --no-web)  WITH_WEB=0 ;;
     --workers) shift; WORKERS="${1:-2}" ;;
-    -h|--help) sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) usage; exit 0 ;;
     *) die "Unknown option: $1  (try --help)" ;;
   esac
   shift
@@ -59,29 +57,22 @@ done
 
 mkdir -p "$RUN_DIR"
 
-# ─── process helpers ─────────────────────────────────────────────────────────
-# PID files rather than pkill patterns: pkill would also kill a worker the user
-# started by hand in another terminal, which is rude and confusing.
-
 pid_of()      { [[ -f "$RUN_DIR/$1.pid" ]] && cat "$RUN_DIR/$1.pid" || echo ""; }
 is_running()  { local p; p="$(pid_of "$1")"; [[ -n "$p" ]] && kill -0 "$p" 2>/dev/null; }
 
-start_bg() {  # start_bg <name> <workdir> <command...>
+# pid files, not pkill, so we only stop what this script started
+start_bg() {
   local name="$1" dir="$2"; shift 2
   if is_running "$name"; then
     ok "$name already running (pid $(pid_of "$name"))"
     return
   fi
 
-  # `exec` inside the subshell matters: without it the subshell lingers as the
-  # child and `$!` is its pid rather than the server's, so the pid file points
-  # at a shell that has already gone. `disown` matters just as much — a bare
-  # `&` leaves the job in bash's table and the script then blocks on it at
-  # exit, which is exactly how the first version of this hung forever with
-  # every service up and running.
+  # exec makes $! the real server pid and not a shell around it
   ( cd "$dir" && exec "$@" ) >"$RUN_DIR/$name.log" 2>&1 </dev/null &
   local pid=$!
   echo "$pid" >"$RUN_DIR/$name.pid"
+  # otherwise the script blocks on the job when it exits
   disown "$pid" 2>/dev/null || true
 
   sleep 1
@@ -94,9 +85,7 @@ start_bg() {  # start_bg <name> <workdir> <command...>
   fi
 }
 
-# Every pid beneath $1, depth-first. `npm run dev` becomes sh -> node, and
-# celery's prefork pool is a tree of children — killing only the pid we
-# recorded orphans the rest, which then keep holding port 3000 and the queue.
+# npm and celery start child trees, kill them all or they keep the ports
 descendants() {
   local parent="$1" child
   for child in $(pgrep -P "$parent" 2>/dev/null); do
@@ -111,14 +100,8 @@ stop_one() {
     rm -f "$RUN_DIR/$name.pid"; return
   fi
 
-  # The tree has to be walked *before* the parent dies. Afterwards the children
-  # are reparented to init and there is no longer any way to find them from
-  # the pid we hold.
   local tree; tree="$(descendants "$p")$p"
 
-  # TERM first so celery can finish the task it is on and uvicorn can close
-  # its sockets; KILL only what refuses.
-  # shellcheck disable=SC2086
   kill -TERM $tree 2>/dev/null || true
 
   local remaining
@@ -130,7 +113,6 @@ stop_one() {
   done
 
   if [[ -n "$remaining" ]]; then
-    # shellcheck disable=SC2086
     kill -9 $remaining 2>/dev/null || true
   fi
 
@@ -146,7 +128,7 @@ confirm() {
   [[ -z "$reply" || "$reply" =~ ^[Yy] ]]
 }
 
-pkg_install() {  # pkg_install <human name> <apt pkg> <dnf pkg> <brew pkg>
+pkg_install() {
   local label="$2" ; local apt="$2" dnf="$3" brew="$4"
   if command -v apt-get >/dev/null 2>&1;  then confirm "Install $1 with apt?"  && sudo apt-get update -qq && sudo apt-get install -y "$apt"
   elif command -v dnf >/dev/null 2>&1;    then confirm "Install $1 with dnf?"  && sudo dnf install -y "$dnf"
@@ -154,8 +136,6 @@ pkg_install() {  # pkg_install <human name> <apt pkg> <dnf pkg> <brew pkg>
   elif command -v brew >/dev/null 2>&1;   then confirm "Install $1 with brew?" && brew install "$brew"
   else return 1; fi
 }
-
-# ─── modes that exit early ───────────────────────────────────────────────────
 
 show_status() {
   step "Status"
@@ -186,7 +166,6 @@ case "$MODE" in
     for n in web worker api; do stop_one "$n"; done ;;
 esac
 
-# ═════════════════════════════════════════════════════════════════════════════
 printf "${C_BOLD}${C_BLUE}Deep Truth${C_RESET} ${C_DIM}· %s${C_RESET}\n" "$REPO_ROOT"
 MISSING=0
 
@@ -224,7 +203,6 @@ else
   pkg_install "ffmpeg" ffmpeg ffmpeg ffmpeg || true
 fi
 
-# ─── 2. Redis ────────────────────────────────────────────────────────────────
 step "2. Redis"
 
 if redis-cli ping >/dev/null 2>&1; then
@@ -254,12 +232,8 @@ else
   fi
 fi
 
-# ─── 3. Package import path ──────────────────────────────────────────────────
 step "3. Package layout"
 
-# `import deeptruth_pipeline` resolves to the repo root itself, so the
-# directory has to carry that name. Renaming a cloned folder is intrusive, so a
-# sibling symlink is used instead — it costs nothing and leaves the clone alone.
 PARENT="$(dirname "$REPO_ROOT")"
 LINK="$PARENT/deeptruth_pipeline"
 if [[ "$(basename "$REPO_ROOT")" == "deeptruth_pipeline" ]]; then
@@ -272,7 +246,6 @@ else
   ln -s "$REPO_ROOT" "$LINK" && ok "created import link $LINK"
 fi
 
-# ─── 4. Python dependencies ──────────────────────────────────────────────────
 step "4. Python dependencies"
 
 MISSING_PY="$("$PY" - <<'PYEOF' 2>/dev/null || true
@@ -300,7 +273,6 @@ else
   ok "Python dependencies installed"
 fi
 
-# ─── 5. Node dependencies ────────────────────────────────────────────────────
 if [[ $WITH_WEB -eq 1 ]]; then
   step "5. Console dependencies"
   if [[ -d "$CLIENT_DIR/node_modules" ]]; then
@@ -315,7 +287,6 @@ if [[ $WITH_WEB -eq 1 ]]; then
   fi
 fi
 
-# ─── 6. Model weights ────────────────────────────────────────────────────────
 step "6. Model weights"
 
 count_adapters() { find "$1" -maxdepth 2 -name adapter_config.json 2>/dev/null | wc -l | tr -d ' '; }
@@ -340,7 +311,6 @@ fi
 
 [[ $MISSING -eq 0 ]] || die "Cannot start — unresolved problems above."
 
-# ─── 7. Start ────────────────────────────────────────────────────────────────
 step "7. Starting services"
 
 if port_open 8000 && ! is_running api; then
@@ -349,7 +319,6 @@ else
   start_bg api "$SERVER_DIR" "$PY" main.py
 fi
 
-# Workers do not reload on code change — that is why --restart exists.
 start_bg worker "$SERVER_DIR" \
   celery -A app.queue.celery_app worker \
   --loglevel=info --concurrency="$WORKERS" --queues=analysis \
@@ -363,7 +332,6 @@ if [[ $WITH_WEB -eq 1 ]]; then
   fi
 fi
 
-# ─── 8. Health ───────────────────────────────────────────────────────────────
 step "8. Health"
 
 printf "  waiting for the API"
@@ -378,8 +346,6 @@ if [[ -z "$HEALTH" ]]; then
   bad "API not answering — see .run/api.log"
 else
   ok "API: $HEALTH"
-  # "idle" means Redis is fine but no worker answered a control ping. Worth
-  # calling out: uploads queue and never run, which looks like a hang.
   grep -q '"status":"ok"' <<<"$HEALTH" && ok "workers connected" \
     || warn "no worker registered yet — give it a few seconds, then ./scripts/start.sh --status"
 fi

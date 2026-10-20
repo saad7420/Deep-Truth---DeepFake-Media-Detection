@@ -1,23 +1,13 @@
 "use client";
 
-/* ============================================================================
-   DEEP TRUTH — SHARED UI PRIMITIVES
-   Small, unopinionated pieces reused across every console page so headers,
-   stat tiles, empty states and error states stay identical everywhere.
-   ========================================================================= */
-
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
 import { AlertTriangle, Loader2, RefreshCw } from "lucide-react";
 import { cn } from "@/app/lib/utils";
 
-/* ── Eyebrow ─────────────────────────────────────────────────────────────── */
-
 export function Eyebrow({ children, className }: { children: React.ReactNode; className?: string }) {
   return <p className={cn("eyebrow", className)}>{children}</p>;
 }
-
-/* ── Page header ─────────────────────────────────────────────────────────── */
 
 export function PageHeader({
   eyebrow,
@@ -30,7 +20,6 @@ export function PageHeader({
   title: string;
   description?: string;
   actions?: React.ReactNode;
-  /** Optional live pill, e.g. the system-online indicator. */
   status?: React.ReactNode;
 }) {
   return (
@@ -49,8 +38,6 @@ export function PageHeader({
     </header>
   );
 }
-
-/* ── Live status pill ────────────────────────────────────────────────────── */
 
 export function LivePill({
   label,
@@ -83,8 +70,6 @@ export function LivePill({
     </span>
   );
 }
-
-/* ── Panel ───────────────────────────────────────────────────────────────── */
 
 export function Panel({
   children,
@@ -134,8 +119,6 @@ export function PanelHeading({
     </div>
   );
 }
-
-/* ── Stat tile ───────────────────────────────────────────────────────────── */
 
 export function StatTile({
   label,
@@ -196,11 +179,6 @@ export function StatTile({
   return href ? <Link href={href}>{body}</Link> : body;
 }
 
-/* ── Empty state ─────────────────────────────────────────────────────────────
-   An empty screen is an invitation to act, so every one of these takes an
-   action rather than just explaining that nothing is here.
-   ------------------------------------------------------------------------- */
-
 export function EmptyState({
   icon: Icon,
   title,
@@ -223,11 +201,6 @@ export function EmptyState({
     </div>
   );
 }
-
-/* ── Error state ─────────────────────────────────────────────────────────────
-   Errors say what happened and what to do about it. No apologies, no
-   "something went wrong".
-   ------------------------------------------------------------------------- */
 
 export function ErrorState({
   title = "Couldn't load this",
@@ -258,8 +231,6 @@ export function ErrorState({
   );
 }
 
-/* ── Inline spinner ──────────────────────────────────────────────────────── */
-
 export function Spinner({ label, className }: { label?: string; className?: string }) {
   return (
     <div className={cn("flex items-center justify-center gap-2 py-12 text-slate-500", className)}>
@@ -268,8 +239,6 @@ export function Spinner({ label, className }: { label?: string; className?: stri
     </div>
   );
 }
-
-/* ── Key/value row, used across every metadata panel ─────────────────────── */
 
 export function MetaRow({
   label,
@@ -296,8 +265,6 @@ export function MetaRow({
     </div>
   );
 }
-
-/* ── Section divider with label ──────────────────────────────────────────── */
 
 export function SectionRule({ label }: { label: string }) {
   return (

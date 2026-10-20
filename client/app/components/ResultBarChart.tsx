@@ -1,16 +1,5 @@
 "use client";
 
-/* ============================================================================
-   DEEP TRUTH — RESULT BREAKDOWN
-   ----------------------------------------------------------------------------
-   Renders one case's analysis: the fused verdict, the evidence behind it in
-   plain language, and the individual checkpoint votes underneath.
-
-   Row interpretation lives in app/lib/analysis.ts. This file only decides how
-   the result looks — it does no name-matching of its own, which is what the
-   previous version got wrong.
-   ========================================================================= */
-
 import { useEffect, useState } from "react";
 import { ChevronDown, FlaskConical, Info, ShieldQuestion } from "lucide-react";
 
@@ -23,8 +12,6 @@ import {
   type SecondarySignal,
 } from "@/app/lib/analysis";
 import { VERDICT, type AnalysisResult } from "@/app/shared/schema";
-
-/* ── Single animated bar ─────────────────────────────────────────────────── */
 
 interface BarProps {
   label: string;
@@ -49,8 +36,6 @@ export function ConfidenceBar({
   const clamped = Math.max(0, Math.min(100, value));
 
   useEffect(() => {
-    // Respect a reduced-motion preference: land on the final width straight
-    // away rather than sweeping the bar across the panel.
     const reduced =
       typeof window !== "undefined" &&
       window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -100,8 +85,6 @@ export function ConfidenceBar({
   );
 }
 
-/* ── Main breakdown ──────────────────────────────────────────────────────── */
-
 interface ResultBarChartProps {
   riskScore: number;
   syntheticLikelihood: number;
@@ -119,9 +102,6 @@ export function ResultBarChart({
     readAnalysis(analysisResults);
   const clamped = Math.max(0, Math.min(100, riskScore));
 
-  /* A neutral summary means the engine declined to contribute. Reporting a
-     percentage in that case would be inventing a reading the pipeline never
-     took, so the headline says so outright. */
   const neutral = summary?.isNeutral ?? false;
   const status = neutral ? "inconclusive" : verdictFromRisk(clamped);
   const meta = VERDICT[status];
@@ -134,13 +114,10 @@ export function ResultBarChart({
         ? "bg-gradient-to-r from-emerald-600 to-emerald-400"
         : "bg-gradient-to-r from-amber-600 to-amber-400";
 
-  /* The image branch tags each adapter generalist/face; the video branch
-     doesn't, so it falls back to one flat list. */
   const grouped = generalists.length > 0 || faceCheckpoints.length > 0;
 
   return (
     <div className="space-y-6">
-      {/* ── Verdict header ───────────────────────────────────────────────── */}
       <div className="space-y-3 border-b border-slate-800 pb-4">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <div className="min-w-0">
@@ -171,11 +148,6 @@ export function ResultBarChart({
         )}
       </div>
 
-      {/* ── Unvalidated checkpoint ────────────────────────────────────────────
-          Sits above the score deliberately. A model that has not been checked
-          against real-world data can be confidently wrong, and a reader who
-          scrolls past the number without seeing this has been misled by the
-          interface rather than by the model. */}
       {summary?.isExperimental && !neutral && (
         <div className="flex gap-3 rounded-lg border border-orange-500/30 bg-orange-500/10 px-3.5 py-3">
           <FlaskConical className="mt-0.5 h-4 w-4 shrink-0 text-orange-400" />
@@ -192,7 +164,6 @@ export function ResultBarChart({
         </div>
       )}
 
-      {/* ── Neutral notice ───────────────────────────────────────────────── */}
       {neutral && (
         <div className="flex gap-3 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3.5 py-3">
           <ShieldQuestion className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
@@ -209,7 +180,6 @@ export function ResultBarChart({
         </div>
       )}
 
-      {/* ── Primary metrics ──────────────────────────────────────────────── */}
       {!neutral && (
         <div className="space-y-3">
           <ConfidenceBar
@@ -227,7 +197,6 @@ export function ResultBarChart({
         </div>
       )}
 
-      {/* ── How the engine got there ─────────────────────────────────────── */}
       {!neutral && explanation.length > 0 && (
         <div className="space-y-2 rounded-lg border border-slate-800 bg-slate-900/60 px-3.5 py-3">
           <div className="flex items-center gap-2">
@@ -244,7 +213,6 @@ export function ResultBarChart({
         </div>
       )}
 
-      {/* ── Checkpoint votes ─────────────────────────────────────────────── */}
       {checkpoints.length > 0 && (
         <div className="space-y-2">
           <button
@@ -289,12 +257,6 @@ export function ResultBarChart({
         </div>
       )}
 
-      {/* ── Secondary signals (SRM, etc.) ────────────────────────────────────
-          Deliberately styled apart from everything above: no risk bar, no
-          colour tied to the primary verdict palette, and its own heading —
-          nothing here should read as "another vote" the way a checkpoint
-          does. This is supplementary evidence the primary engine's fused
-          score never saw. */}
       {secondarySignals.length > 0 && (
         <div className="space-y-2 border-t border-slate-800 pt-4">
           <p className="font-mono text-[10px] uppercase tracking-widest text-slate-600">
@@ -308,8 +270,6 @@ export function ResultBarChart({
     </div>
   );
 }
-
-/* ── Secondary signal card ──────────────────────────────────────────────── */
 
 function SecondarySignalCard({ signal }: { signal: SecondarySignal }) {
   return (
@@ -334,8 +294,6 @@ function SecondarySignalCard({ signal }: { signal: SecondarySignal }) {
     </div>
   );
 }
-
-/* ── Checkpoint pieces ───────────────────────────────────────────────────── */
 
 function CheckpointBar({ row, delay }: { row: CheckpointRow; delay: number }) {
   return (

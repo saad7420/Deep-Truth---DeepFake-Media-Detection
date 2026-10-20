@@ -1,13 +1,5 @@
 "use client";
 
-/* ============================================================================
-   DEEP TRUTH — DOCUMENTATION
-   ----------------------------------------------------------------------------
-   Written for the person operating the console, not for whoever wrote the
-   backend: what a verdict means, what the limits are, and what the API does if
-   you want to drive it directly.
-   ========================================================================= */
-
 import Link from "next/link";
 import { ArrowUpRight, BookOpen, GitBranch, Terminal, TriangleAlert } from "lucide-react";
 
@@ -53,7 +45,6 @@ export default function DocsPage() {
         }
       />
 
-      {/* ── Reading a verdict ─────────────────────────────────────────────── */}
       <Panel className="overflow-hidden">
         <PanelHeading icon={BookOpen} title="Reading a verdict" hint="What each status means in practice" />
         <div className="divide-y divide-slate-800/70">
@@ -85,8 +76,6 @@ export default function DocsPage() {
         </div>
       </Panel>
 
-      {/* ── Limits — stated plainly, because a forensic tool that oversells
-             itself is the failure mode that matters most here ────────────── */}
       <Panel className="border-amber-500/20 p-5">
         <div className="flex gap-4">
           <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
@@ -116,7 +105,6 @@ export default function DocsPage() {
         </div>
       </Panel>
 
-      {/* ── Pipeline ──────────────────────────────────────────────────────── */}
       <Panel className="overflow-hidden">
         <PanelHeading
           icon={GitBranch}
@@ -138,7 +126,6 @@ export default function DocsPage() {
         </ol>
       </Panel>
 
-      {/* ── API ───────────────────────────────────────────────────────────── */}
       <Panel className="overflow-hidden">
         <PanelHeading icon={Terminal} title="API" hint={API_BASE} />
         <div className="divide-y divide-slate-800/70">
@@ -164,7 +151,6 @@ export default function DocsPage() {
         </div>
       </Panel>
 
-      {/* ── Example ───────────────────────────────────────────────────────── */}
       <Panel className="p-5">
         <SectionRule label="Open a case from the command line" />
         <pre className="mt-4 overflow-x-auto rounded-lg border border-slate-800 bg-slate-950 p-4 font-mono text-[11px] leading-relaxed text-slate-300">

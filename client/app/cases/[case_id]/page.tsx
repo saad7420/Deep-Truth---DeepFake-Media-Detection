@@ -1,14 +1,5 @@
 "use client";
 
-/* ============================================================================
-   DEEP TRUTH — FORENSIC REPORT (single case)
-   ----------------------------------------------------------------------------
-   The previous version of this page read `params.caseId` while the route
-   segment is `[case_id]`, so the id was always undefined and the fetch never
-   ran. It now reads `case_id`, and looks the case up by its public
-   CASE-XXXXXXXX id — which is what GET /cases/{case_id} matches on.
-   ========================================================================= */
-
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -59,8 +50,6 @@ export default function CaseReportPage() {
   const caseId = params?.case_id;
   const { data: c, isLoading, isError, error, refetch, isFetching } = useCase(caseId);
 
-  // Backend-pushed transitions for this case. The `useCase` poll above stays
-  // as the fallback — see useJobStream's note on why both exist.
   useJobStream(caseId);
 
   const updateCase = useUpdateCase();
@@ -74,8 +63,6 @@ export default function CaseReportPage() {
   useEffect(() => {
     if (c && !editingNotes) setNotes(c.notes ?? "");
   }, [c, editingNotes]);
-
-  /* ── Loading / error ─────────────────────────────────────────────────── */
 
   if (isLoading) {
     return (
@@ -133,7 +120,6 @@ export default function CaseReportPage() {
 
   return (
     <AppShell width="wide">
-      {/* ── Top bar ───────────────────────────────────────────────────────── */}
       <div className="no-print flex flex-wrap items-center justify-between gap-3">
         <Button
           variant="ghost"
@@ -172,7 +158,6 @@ export default function CaseReportPage() {
         </div>
       </div>
 
-      {/* ── Verdict banner ────────────────────────────────────────────────── */}
       <Panel className={cn("overflow-hidden border-l-4 p-6", meta.border)}>
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0 flex-1">
@@ -199,8 +184,6 @@ export default function CaseReportPage() {
               )}
             </div>
 
-            {/* Titles are often raw filenames with no spaces; let them wrap
-                anywhere so they never run under the risk dial. */}
             <h1 className="font-display text-2xl font-bold tracking-tight text-white [overflow-wrap:anywhere] lg:text-3xl">
               {c.title}
             </h1>
@@ -222,23 +205,18 @@ export default function CaseReportPage() {
               </span>
             )}
 
-            {/* Why this case is waiting, retrying, or failed — and, on a
-                cache hit, why the verdict appeared instantly. */}
             <div className="mt-4 max-w-2xl">
               <JobStatusPanel job={c.job} />
             </div>
           </div>
 
-          {/* Risk dial */}
           <div className="shrink-0">
             <RiskDial value={c.riskScore} pending={analysing} hex={tone.hex} />
           </div>
         </div>
       </Panel>
 
-      {/* ── Evidence + analysis ───────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">
-        {/* Left column */}
         <div className="space-y-6 xl:col-span-2">
           <Panel className="overflow-hidden">
             <PanelHeading icon={MediaIcon} title="Evidence" hint={c.fileName ?? undefined} />
@@ -252,8 +230,6 @@ export default function CaseReportPage() {
             </div>
           </Panel>
 
-          {/* Directly under the evidence it explains, so the map and the image
-              it came from are read together. */}
           <ArtifactMapPanel
             map={summary?.evidence.artifact_map}
             originalUrl={resolveMediaUrl(c.fileUrl)}
@@ -274,7 +250,6 @@ export default function CaseReportPage() {
             </div>
           </Panel>
 
-          {/* Investigator notes */}
           <Panel className="p-5">
             <div className="mb-3 flex items-center justify-between">
               <SectionRule label="Investigator notes" />
@@ -334,7 +309,6 @@ export default function CaseReportPage() {
           </Panel>
         </div>
 
-        {/* Right column */}
         <div className="space-y-6 xl:col-span-3">
           <Panel className="overflow-hidden">
             <PanelHeading
@@ -389,11 +363,6 @@ export default function CaseReportPage() {
   );
 }
 
-/* ── Risk dial ───────────────────────────────────────────────────────────────
-   A ring rather than a bar: on the report the score is the headline, and the
-   ring reads at a glance from across a desk.
-   ------------------------------------------------------------------------- */
-
 function RiskDial({ value, pending, hex }: { value: number; pending: boolean; hex: string }) {
   const clamped = Math.max(0, Math.min(100, value));
   const radius = 52;
@@ -436,8 +405,6 @@ function RiskDial({ value, pending, hex }: { value: number; pending: boolean; he
     </div>
   );
 }
-
-/* ── Engine log ──────────────────────────────────────────────────────────── */
 
 function EngineLog({ rows }: { rows: AnalysisResult[] }) {
   return (
@@ -486,8 +453,6 @@ function EngineLog({ rows }: { rows: AnalysisResult[] }) {
   );
 }
 
-/* ── Analysing placeholder ───────────────────────────────────────────────── */
-
 function AnalysingSkeleton() {
   const stages = [
     "De-multiplexing streams",
@@ -514,8 +479,6 @@ function AnalysingSkeleton() {
     </div>
   );
 }
-
-/* ── Helpers ─────────────────────────────────────────────────────────────── */
 
 function formatFull(iso?: string | null) {
   if (!iso) return "—";

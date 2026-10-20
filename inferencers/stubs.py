@@ -1,8 +1,3 @@
-"""Audio inferencer stub.
-
-Replace .predict() with real model code once the audio model is trained.
-The image inferencer has moved to its own file (inferencers/image.py).
-"""
 from __future__ import annotations
 
 from .base import Inferencer, InferenceResult

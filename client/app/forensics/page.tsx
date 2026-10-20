@@ -1,13 +1,5 @@
 "use client";
 
-/* ============================================================================
-   DEEP TRUTH — FORENSICS HUB
-   ----------------------------------------------------------------------------
-   Upload evidence, watch the pipeline run, read the verdict. The server queues
-   analysis itself on POST /cases, so there's no separate "start" step — the
-   case comes back `processing` and useCase polls until it settles.
-   ========================================================================= */
-
 import { useCallback, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -73,8 +65,6 @@ export default function ForensicsHubPage() {
   const { data: activeCase } = useCase(activeCaseId ?? undefined);
   const { data: list, isLoading: listLoading } = useCases({ pageSize: 6 });
 
-  /* ── File selection ────────────────────────────────────────────────────── */
-
   const acceptFile = useCallback((picked: File) => {
     const detected = inferMediaType(picked);
     const problem = validateFile(picked, detected);
@@ -128,8 +118,6 @@ export default function ForensicsHubPage() {
     );
   }
 
-  /* ── Derived view state ────────────────────────────────────────────────── */
-
   const uploading = createCase.isPending;
   const analysing = activeCase?.status === "processing";
   const settled = activeCase && !analysing;
@@ -152,7 +140,6 @@ export default function ForensicsHubPage() {
       />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">
-        {/* ── Upload ──────────────────────────────────────────────────────── */}
         <div className="space-y-6 xl:col-span-2">
           <Panel className="overflow-hidden">
             <PanelHeading
@@ -162,7 +149,6 @@ export default function ForensicsHubPage() {
             />
 
             <div className="space-y-5 p-5">
-              {/* Drop zone */}
               <div
                 onDragOver={(e) => {
                   e.preventDefault();
@@ -240,12 +226,10 @@ export default function ForensicsHubPage() {
                 </p>
               )}
 
-              {/* Local preview before upload */}
               {objectUrl && file && !uploading && (
                 <MediaPreview fileUrl={objectUrl} mediaType={mediaType} fileName={file.name} />
               )}
 
-              {/* Case title */}
               <div className="space-y-1.5">
                 <label htmlFor="case-title" className="eyebrow block">
                   Case title
@@ -263,7 +247,6 @@ export default function ForensicsHubPage() {
                 </p>
               </div>
 
-              {/* Upload progress */}
               {uploading && (
                 <div className="space-y-2">
                   <div className="flex justify-between font-mono text-[11px] text-slate-400">
@@ -299,7 +282,6 @@ export default function ForensicsHubPage() {
             </div>
           </Panel>
 
-          {/* What each modality runs */}
           <Panel className="p-5">
             <p className="eyebrow mb-3">What runs per modality</p>
             <ul className="space-y-3">
@@ -328,7 +310,6 @@ export default function ForensicsHubPage() {
           </Panel>
         </div>
 
-        {/* ── Results ─────────────────────────────────────────────────────── */}
         <div className="xl:col-span-3">
           <Panel className="overflow-hidden">
             <PanelHeading
@@ -382,7 +363,6 @@ export default function ForensicsHubPage() {
         </div>
       </div>
 
-      {/* ── Recent cases ──────────────────────────────────────────────────── */}
       <Panel className="overflow-hidden">
         <PanelHeading
           title="Recent scans"
@@ -411,11 +391,6 @@ export default function ForensicsHubPage() {
     </AppShell>
   );
 }
-
-/* ── Pipeline progress ───────────────────────────────────────────────────────
-   Stages mirror the real order in server/app/services/analyser.py, so what the
-   operator watches matches what the backend is doing.
-   ------------------------------------------------------------------------- */
 
 function PipelineProgress({ mediaType }: { mediaType: MediaType }) {
   const stages =

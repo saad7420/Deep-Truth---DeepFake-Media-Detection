@@ -1,22 +1,7 @@
-/* ============================================================================
-   DEEP TRUTH EXTENSION — CONTENT SCRIPT
-   ----------------------------------------------------------------------------
-   Finds media on the page, offers to verify it, and shows the verdict in
-   place.
-
-   Positioning approach: every badge lives in one fixed-position layer
-   appended to <body>, and is placed from the element's viewport rect on a
-   rAF-throttled scroll/resize pass. The previous version injected an
-   absolutely-positioned wrapper into each element's parent, which inherits
-   the parent's transforms, clipping and stacking context — that is why
-   badges drifted or vanished inside the scroll containers on X and
-   Instagram. One layer, viewport coordinates, no inherited context.
-   ========================================================================= */
-
 import type { CaseStatus, MediaType, ScanRecord, StartAnalysisResponse } from '../types';
 
 const LAYER_ID = 'deep-truth-overlay-layer';
-/** Anything smaller than this is an avatar, icon or tracking pixel. */
+// ignore small images like icons and avatars
 const MIN_EDGE_PX = 120;
 
 type MediaEl = HTMLVideoElement | HTMLImageElement | HTMLAudioElement;
@@ -25,7 +10,6 @@ interface Tracked {
   el: MediaEl;
   badge: HTMLButtonElement;
   mediaType: MediaType;
-  /** Set once a scan is opened, so pushed updates can be matched back. */
   caseId?: string;
   resolvedUrl?: string;
 }
@@ -38,10 +22,6 @@ let rafPending = false;
 
 const contextValid = (): boolean =>
   typeof chrome !== 'undefined' && !!chrome.runtime && !!chrome.runtime.id;
-
-/* ── Verdict presentation ────────────────────────────────────────────────────
-   Colours and thresholds mirror the console's VERDICT map so the extension
-   and the web app never disagree about what a score means. */
 
 const PALETTE: Record<string, { fg: string; bg: string; border: string; text: string }> = {
   idle: { fg: '#ecfeff', bg: 'rgba(14,116,144,0.92)', border: '#22d3ee', text: 'Verify' },
@@ -61,29 +41,17 @@ function paint(badge: HTMLButtonElement, key: string, label: string, title?: str
   badge.title = title ?? label;
 }
 
-/* ── Media URL resolution ────────────────────────────────────────────────── */
-
 function mediaTypeOf(el: MediaEl): MediaType {
   if (el.tagName === 'VIDEO') return 'video';
   if (el.tagName === 'AUDIO') return 'audio';
   return 'image';
 }
 
-/**
- * Work out a URL the service worker can actually download.
- *
- * Returns null with a reason for media the extension genuinely cannot fetch,
- * rather than starting a scan that is bound to fail. MSE-backed players
- * (YouTube, most streaming sites) expose only a `blob:` URL that is valid
- * inside the page and meaningless anywhere else, so those are declined up
- * front with an explanation.
- */
 function resolveUrl(el: MediaEl): { url: string } | { error: string } {
   let src = '';
 
   if (el.tagName === 'IMG') {
     const img = el as HTMLImageElement;
-    // currentSrc reflects what the browser picked from srcset.
     src = img.currentSrc || img.src || '';
   } else {
     const media = el as HTMLVideoElement | HTMLAudioElement;
@@ -107,8 +75,6 @@ function resolveUrl(el: MediaEl): { url: string } | { error: string } {
   return { url: src };
 }
 
-/* ── Overlay layer ───────────────────────────────────────────────────────── */
-
 function ensureLayer(): HTMLDivElement {
   if (layer && layer.isConnected) return layer;
   const el = document.createElement('div');
@@ -117,7 +83,6 @@ function ensureLayer(): HTMLDivElement {
     position: 'fixed',
     inset: '0',
     pointerEvents: 'none',
-    // Above almost everything, below native browser UI.
     zIndex: '2147483000',
   } satisfies Partial<CSSStyleDeclaration>);
   document.body.appendChild(el);
@@ -146,7 +111,6 @@ function makeBadge(): HTMLButtonElement {
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
-    // Never inherit the host page's text styling.
     textTransform: 'none',
     margin: '0',
   } satisfies Partial<CSSStyleDeclaration>);
@@ -156,7 +120,7 @@ function makeBadge(): HTMLButtonElement {
   return badge;
 }
 
-/** Place every badge from its element's current viewport rect. */
+// all badges live in one fixed layer and are placed from viewport rects
 function reposition(): void {
   tracked.forEach((t) => {
     if (!t.el.isConnected) {
@@ -165,7 +129,6 @@ function reposition(): void {
     }
     const r = t.el.getBoundingClientRect();
 
-    // Off-screen or collapsed: hide rather than pile badges at the origin.
     const offscreen =
       r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth;
     if (offscreen || r.width === 0 || r.height === 0) {
@@ -188,15 +151,11 @@ function requestReposition(): void {
   });
 }
 
-/* ── Attach / detach ─────────────────────────────────────────────────────── */
-
 function eligible(el: MediaEl): boolean {
   if (tracked.has(el)) return false;
   if (el.closest(`#${LAYER_ID}`)) return false;
 
   const r = el.getBoundingClientRect();
-  // Audio elements are controls-sized by nature — exempt them from the
-  // dimension filter that screens out image thumbnails and icons.
   if (el.tagName === 'AUDIO') return r.width > 0;
   return r.width >= MIN_EDGE_PX && r.height >= MIN_EDGE_PX;
 }
@@ -234,8 +193,6 @@ function clearAll(): void {
   layer?.remove();
   layer = null;
 }
-
-/* ── Scanning ────────────────────────────────────────────────────────────── */
 
 async function beginScan(entry: Tracked): Promise<void> {
   if (!contextValid()) return;
@@ -275,7 +232,6 @@ async function beginScan(entry: Tracked): Promise<void> {
   paint(entry.badge, 'processing', '◌ Analysing…', `Case ${response.caseId} is running`);
 }
 
-/** Render a pushed update from the service worker. */
 function applyUpdate(record: ScanRecord): void {
   tracked.forEach((t) => {
     const matches =
@@ -302,9 +258,6 @@ function applyUpdate(record: ScanRecord): void {
             ? '?'
             : '⚠';
 
-    // An unvalidated engine gets a visible marker, not just a longer
-    // tooltip — someone glancing at a red badge reading "Manipulated 99%"
-    // should be able to see that the number is provisional without hovering.
     const flask = record.experimental ? ' \u{1F9EA}' : '';
     const detail = [
       record.experimental
@@ -319,15 +272,11 @@ function applyUpdate(record: ScanRecord): void {
   });
 }
 
-/* ── DOM discovery ───────────────────────────────────────────────────────── */
-
 function scan(): void {
   if (!scanning) return;
   document.querySelectorAll<MediaEl>('video, img, audio').forEach(attach);
   requestReposition();
 }
-
-/* ── Lifecycle ───────────────────────────────────────────────────────────── */
 
 let scanTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -341,8 +290,6 @@ function startScanning(): void {
   });
   observer.observe(document.body, { childList: true, subtree: true });
 
-  // Catch elements that only gain their dimensions after media metadata
-  // loads, which no mutation event reports.
   if (scanTimer === null) {
     scanTimer = setInterval(() => {
       if (contextValid()) scan();

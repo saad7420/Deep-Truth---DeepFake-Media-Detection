@@ -1,36 +1,4 @@
-﻿<#
-.SYNOPSIS
-    Deep Truth — one-command setup and run (Windows 10/11, PowerShell 5.1+).
-
-.DESCRIPTION
-    Checks every dependency, installs what is missing where it safely can,
-    then starts Redis-dependent services and reports health.
-
-    Three things differ from the Linux script, and they are the reasons this
-    file exists rather than a note in the README:
-
-    1. Celery's default prefork pool CANNOT work on Windows — it needs fork(),
-       which Windows does not have. The worker starts and then fails or hangs
-       the moment it picks up a task. `--pool=solo` is mandatory here, and it
-       runs one task at a time, so concurrency comes from running several
-       workers rather than from --concurrency.
-
-    2. There is no official Redis for Windows. This script detects Memurai,
-       WSL, or Docker and guides accordingly.
-
-    3. `import deeptruth_pipeline` needs the repo directory to carry that name.
-       Symlinks on Windows need admin or Developer Mode, so the script prefers
-       telling you to rename the folder over silently failing.
-
-.EXAMPLE
-    .\scripts\start.ps1              # check, install, run
-    .\scripts\start.ps1 -Check       # report only
-    .\scripts\start.ps1 -Stop        # stop everything it started
-    .\scripts\start.ps1 -Restart     # required after changing Python code
-    .\scripts\start.ps1 -Status
-    .\scripts\start.ps1 -Workers 2   # two solo workers = two files at once
-#>
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [switch]$Check,
     [switch]$Stop,
@@ -71,10 +39,6 @@ function Test-Port {
     } catch { return $false }
 }
 
-# ─── process tracking ────────────────────────────────────────────────────────
-# PID files, not name matching: killing "every python.exe" would take out
-# whatever else the developer happens to be running.
-
 function Get-TrackedPid { param($Name)
     $f = Join-Path $RunDir "$Name.pid"
     if (Test-Path $f) { return [int](Get-Content $f -First 1) }
@@ -87,6 +51,7 @@ function Test-Tracked { param($Name)
     return [bool](Get-Process -Id $procId -ErrorAction SilentlyContinue)
 }
 
+# record the pid so -Stop only kills what this script started
 function Start-Tracked {
     param($Name, $WorkDir, $Exe, [string[]]$Arguments)
     if (Test-Tracked $Name) {
@@ -115,9 +80,6 @@ function Stop-Tracked {
     $procId = Get-TrackedPid $Name
     if (-not $procId) { return }
 
-    # `npm run dev` becomes node, and a solo worker still spawns helpers.
-    # Children have to be collected before the parent dies, or they are
-    # reparented and there is no way left to find them.
     $tree = @()
     function Get-Children { param($ParentId)
         Get-CimInstance Win32_Process -Filter "ParentProcessId=$ParentId" -ErrorAction SilentlyContinue |
@@ -132,8 +94,6 @@ function Stop-Tracked {
     Remove-Item (Join-Path $RunDir "$Name.pid") -ErrorAction SilentlyContinue
     Write-Ok "$Name stopped"
 }
-
-# ─── early-exit modes ────────────────────────────────────────────────────────
 
 if ($Stop -or $Restart) {
     Write-Step 'Stopping'
@@ -164,7 +124,6 @@ if ($Logs) {
     exit 0
 }
 
-# ═════════════════════════════════════════════════════════════════════════════
 Write-Host "Deep Truth" -ForegroundColor Cyan -NoNewline
 Write-Host " - $RepoRoot" -ForegroundColor DarkGray
 $missing = 0
@@ -198,7 +157,6 @@ elseif (-not $NoWeb) {
 if (Get-Command ffmpeg -ErrorAction SilentlyContinue) { Write-Ok 'ffmpeg present' }
 else { Write-Warn 'ffmpeg not on PATH — PyAV bundles its own, so video usually still works' }
 
-# ─── 2. Redis ────────────────────────────────────────────────────────────────
 Write-Step '2. Redis'
 
 if (Test-Port 6379) {
@@ -223,7 +181,6 @@ if (Test-Port 6379) {
     }
 }
 
-# ─── 3. Package layout ───────────────────────────────────────────────────────
 Write-Step '3. Package layout'
 
 $leaf = Split-Path -Leaf $RepoRoot
@@ -233,9 +190,6 @@ if ($leaf -eq 'deeptruth_pipeline') {
 } elseif (Test-Path $link) {
     Write-Ok "import link present ($link)"
 } else {
-    # Single-quoted: a backtick is PowerShell's escape character, so the
-    # backticks that would read naturally around a code name silently eat the
-    # next letter.
     Write-Bad ("import deeptruth_pipeline will fail: this folder is named '" + $leaf + "'")
     if (-not $Check) {
         Write-Info 'Simplest fix: rename the cloned folder to  deeptruth_pipeline'
@@ -251,7 +205,6 @@ if ($leaf -eq 'deeptruth_pipeline') {
     } else { $missing = 1 }
 }
 
-# ─── 4. Python dependencies ──────────────────────────────────────────────────
 Write-Step '4. Python dependencies'
 
 if ($Py) {
@@ -280,7 +233,6 @@ print(' '.join(sorted(set(missing))))
     }
 }
 
-# ─── 5. Console dependencies ─────────────────────────────────────────────────
 if (-not $NoWeb) {
     Write-Step '5. Console dependencies'
     if (Test-Path (Join-Path $ClientDir 'node_modules')) {
@@ -297,7 +249,6 @@ if (-not $NoWeb) {
     }
 }
 
-# ─── 6. Model weights ────────────────────────────────────────────────────────
 Write-Step '6. Model weights'
 
 function Count-Adapters { param($Dir)
@@ -324,7 +275,6 @@ if ($Check) {
 }
 if ($missing -ne 0) { Write-Host "`nCannot start — unresolved problems above." -ForegroundColor Red; exit 1 }
 
-# ─── 7. Start ────────────────────────────────────────────────────────────────
 Write-Step '7. Starting services'
 
 if ((Test-Port 8000) -and -not (Test-Tracked 'api')) {
@@ -333,13 +283,11 @@ if ((Test-Port 8000) -and -not (Test-Tracked 'api')) {
     Start-Tracked 'api' $ServerDir $Py @('main.py')
 }
 
-# --pool=solo is not a tuning choice. Celery's default prefork pool needs
-# fork(), which Windows does not provide; without this the worker accepts a
-# task and then dies or hangs. One task at a time per worker is the cost.
 $celery = (Get-Command celery -ErrorAction SilentlyContinue)
 $celeryExe  = if ($celery) { 'celery' } else { $Py }
 $celeryArgs = if ($celery) { @() } else { @('-m','celery') }
 $celeryArgs += @('-A','app.queue.celery_app','worker','--loglevel=info',
+                 # celery's default prefork pool does not work on windows
                  '--pool=solo','--queues=analysis','--without-gossip','--without-mingle')
 
 for ($n = 1; $n -le $Workers; $n++) {
@@ -357,7 +305,6 @@ if (-not $NoWeb) {
     }
 }
 
-# ─── 8. Health ───────────────────────────────────────────────────────────────
 Write-Step '8. Health'
 Write-Host '  waiting for the API' -NoNewline
 $health = $null

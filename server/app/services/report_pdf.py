@@ -1,26 +1,3 @@
-"""Forensic report as a real PDF (M10 FE-3).
-
-The console already had an "Export report" button, but it handed off to the
-browser's print dialog: the operator picks a printer, finds "Save as PDF",
-chooses a destination. That is three decisions and a dialog between wanting a
-report and having one, and nothing about it can be automated — a case cannot
-be emailed, attached, or archived by anything but a human with a mouse.
-
-This builds the document server-side instead, so `GET /cases/{id}/report.pdf`
-is a file. ReportLab rather than a headless browser because the alternative is
-shipping a 300 MB Chromium to render a page the server would also have to be
-able to reach; and rather than a client-side canvas capture because that
-rasterises everything, losing selectable text — which for a document meant for
-journalism or legal use is most of the point.
-
-The cost is that the layout lives here rather than being reused from the React
-report. That is the right trade for an archival document: it renders the same
-in five years regardless of what the console looks like then.
-
-Editorial rule for everything below: the report states what was measured and
-what it means, including when that is "nothing conclusive". A forensic document
-that overstates its own certainty is worse than no document.
-"""
 from __future__ import annotations
 
 import io
@@ -80,10 +57,6 @@ VERDICT_MEANING = {
 }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Styles
-# ─────────────────────────────────────────────────────────────────────────────
-
 def _styles() -> dict:
     base = getSampleStyleSheet()
     return {
@@ -107,21 +80,12 @@ def _styles() -> dict:
 
 
 def _esc(value) -> str:
-    """Paragraph text is parsed as mini-HTML, so anything user-supplied — a
-    case title, a filename — has to be escaped or an stray '&' aborts the
-    render."""
     return (str(value if value is not None else "")
             .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
 
+# basename only, so a url cannot point outside the uploads folder
 def _local_file(url: str | None, directory: Path) -> Path | None:
-    """Resolve a served URL back to the file on disk.
-
-    The stored URLs are absolute (http://host/uploads/x.jpg) but the bytes are
-    local. Fetching our own HTTP endpoint to build a PDF would be absurd, and
-    would break the moment BASE_URL points somewhere this process cannot reach.
-    Only the basename is used, so a URL cannot walk out of the directory.
-    """
     if not url:
         return None
     name = Path(url.split("?")[0]).name
@@ -132,7 +96,6 @@ def _local_file(url: str | None, directory: Path) -> Path | None:
 
 
 def _fit(path: Path, max_w: float, max_h: float) -> Image | None:
-    """An Image flowable scaled to fit, preserving aspect ratio."""
     try:
         iw, ih = ImageReader(str(path)).getSize()
         if not iw or not ih:
@@ -140,14 +103,8 @@ def _fit(path: Path, max_w: float, max_h: float) -> Image | None:
         scale = min(max_w / iw, max_h / ih)
         return Image(str(path), width=iw * scale, height=ih * scale)
     except Exception:
-        # A corrupt or unreadable image must not take the whole report down;
-        # the section simply renders without it.
         return None
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Page furniture
-# ─────────────────────────────────────────────────────────────────────────────
 
 def _decorate(canvas, doc, case_id: str, generated: str):
     canvas.saveState()
@@ -166,10 +123,6 @@ def _decorate(canvas, doc, case_id: str, generated: str):
     canvas.drawRightString(PAGE_W - MARGIN, MARGIN - 8 * mm, f"Page {canvas.getPageNumber()}")
     canvas.restoreState()
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Sections
-# ─────────────────────────────────────────────────────────────────────────────
 
 def _kv_table(rows: list[tuple[str, str]], st: dict, width: float) -> Table:
     data = [[Paragraph(k, st["small"]), Paragraph(_esc(v), st["body"])] for k, v in rows]
@@ -222,13 +175,6 @@ def _verdict_block(case: dict, summary: dict | None, st: dict, width: float) -> 
 
 
 def _checkpoint_table(rows: list[dict], st: dict, width: float) -> Table | None:
-    """Every model that voted, with its own score.
-
-    Included in full rather than summarised because the fused number is a
-    weighted opinion, and a reader assessing this report needs to see the
-    spread behind it — six models at 0.5 and six at 0.9 average the same as
-    twelve at 0.7 and mean something very different.
-    """
     if not rows:
         return None
 
@@ -260,13 +206,6 @@ def _checkpoint_table(rows: list[dict], st: dict, width: float) -> Table | None:
 
 
 def _artifact_section(summary: dict | None, st: dict, width: float) -> list:
-    """The map, plus the sentence that stops it being over-read.
-
-    `localised` decides the wording. A Grad-CAM map always exists; whether it
-    is a statement about a *region* depends on whether the relevance actually
-    concentrates. Printing a diffuse map under the heading "manipulated region"
-    would put a claim in a legal document that the data does not support.
-    """
     am = (summary or {}).get("artifact_map")
     if not am or not am.get("url"):
         return []
@@ -321,16 +260,8 @@ def _artifact_section(summary: dict | None, st: dict, width: float) -> list:
     return out
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Entry point
-# ─────────────────────────────────────────────────────────────────────────────
-
+# page order: verdict, evidence, breakdown, custody, limitations
 def build_report(case: dict, results: list[dict], job: dict | None = None) -> bytes:
-    """Render one case to PDF bytes.
-
-    `case` is the raw DB row; `results` the analysis_results rows with
-    `details` already decoded.
-    """
     st = _styles()
     width = PAGE_W - 2 * MARGIN
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -351,14 +282,12 @@ def build_report(case: dict, results: list[dict], job: dict | None = None) -> by
 
     story: list = []
 
-    # ── Identity ────────────────────────────────────────────────────────────
     story.append(Paragraph(_esc(case.get("title") or "Untitled case"), st["title"]))
     story.append(Paragraph(
         f"Case {_esc(case_id)} &middot; {_esc(case.get('media_type', '')).upper()} "
         f"&middot; opened {_esc(case.get('created_at'))}", st["sub"]))
     story.append(Spacer(1, 8))
 
-    # ── Verdict ─────────────────────────────────────────────────────────────
     story.append(_verdict_block(case, summary, st, width))
     story.append(Spacer(1, 4))
 
@@ -373,7 +302,6 @@ def build_report(case: dict, results: list[dict], job: dict | None = None) -> by
         story.append(Paragraph("How this was decided", st["h2"]))
         story.append(Paragraph(_esc(summary["rationale"]), st["body"]))
 
-    # ── Evidence ────────────────────────────────────────────────────────────
     evidence = _local_file(case.get("file_url"), UPLOAD_DIR)
     if evidence and evidence.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp",
                                                 ".bmp", ".tiff"):
@@ -384,10 +312,8 @@ def build_report(case: dict, results: list[dict], job: dict | None = None) -> by
             story.append(Spacer(1, 2))
             story.append(Paragraph(_esc(case.get("file_name") or ""), st["caption"]))
 
-    # ── Artifact map ────────────────────────────────────────────────────────
     story.extend(_artifact_section(summary, st, width))
 
-    # ── Model breakdown ─────────────────────────────────────────────────────
     table = _checkpoint_table(checkpoints, st, width)
     if table is not None:
         story.append(Paragraph("Model breakdown", st["h2"]))
@@ -406,7 +332,6 @@ def build_report(case: dict, results: list[dict], job: dict | None = None) -> by
                 f"{_esc(s.get('slug'))}: {_esc(s.get('reason'))}" for s in skipped
             ), st["small"]))
 
-    # ── Supplementary signals ───────────────────────────────────────────────
     if secondary:
         story.append(Paragraph("Supplementary analysis", st["h2"]))
         for r in secondary:
@@ -423,7 +348,6 @@ def build_report(case: dict, results: list[dict], job: dict | None = None) -> by
             "verdict above; other supplementary signals (SRM noise analysis) are "
             "recorded as evidence but never override it.", st["caption"]))
 
-    # ── Provenance ──────────────────────────────────────────────────────────
     story.append(PageBreak())
     story.append(Paragraph("Chain of custody", st["h2"]))
 
@@ -463,7 +387,6 @@ def build_report(case: dict, results: list[dict], job: dict | None = None) -> by
             tech.append(("Face detected", "yes" if summary["face_detected"] else "no"))
         story.append(_kv_table(tech, st, width))
 
-    # ── Limits ──────────────────────────────────────────────────────────────
     story.append(Paragraph("Limitations of this analysis", st["h2"]))
     for line in (
         "Detection relies on high-frequency artefacts. Heavy recompression, as "
@@ -481,7 +404,6 @@ def build_report(case: dict, results: list[dict], job: dict | None = None) -> by
         story.append(Paragraph(f"&bull; {line}", st["small"]))
         story.append(Spacer(1, 2))
 
-    # ── Build ───────────────────────────────────────────────────────────────
     buffer = io.BytesIO()
     doc = BaseDocTemplate(
         buffer, pagesize=A4,

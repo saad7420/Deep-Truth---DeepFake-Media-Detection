@@ -8,9 +8,9 @@ from typing import Any
 class InferenceResult:
     media_key: str
     modality: str
-    trust_score: float                           # P(fake) in [0, 1] (or NaN)
-    verdict: str                                 # "FAKE" | "REAL" | "UNKNOWN"
-    confidence: float                            # 0..1, models-agreement
+    trust_score: float
+    verdict: str
+    confidence: float
     per_model: dict[str, float] = field(default_factory=dict)
     rationale: str = ""
     extra: dict[str, Any] = field(default_factory=dict)

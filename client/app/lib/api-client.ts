@@ -1,17 +1,3 @@
-/* ============================================================================
-   DEEP TRUTH — API CLIENT
-   ----------------------------------------------------------------------------
-   Single source of truth for talking to the FastAPI backend
-   (server/app/routers/cases.py + health.py).
-
-   This replaces the older `app/lib/api.ts` and `app/shared/routes.ts`
-   contracts, which described a different backend: numeric case ids, a bare
-   array from GET /cases, a JSON POST body, and a POST /cases/{id}/process
-   endpoint. None of those exist on the real server — ids are strings, the
-   list endpoint returns a pagination envelope, uploads are multipart, and
-   analysis starts automatically as a BackgroundTask on create.
-   ========================================================================= */
-
 import {
   CaseSchema,
   CaseListResponseSchema,
@@ -29,16 +15,10 @@ import {
   type QueueOverview,
 } from "@/app/shared/schema";
 
-/* ── Configuration ───────────────────────────────────────────────────────── */
-
-/** Base URL of the FastAPI service, including the `/api` prefix. */
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "http://localhost:8000/api";
 
-/** Origin only — used to resolve `/uploads/...` media URLs. */
 export const API_ORIGIN = API_BASE.replace(/\/api$/, "");
-
-/* ── Error type ──────────────────────────────────────────────────────────── */
 
 export class ApiError extends Error {
   readonly status: number;
@@ -51,7 +31,6 @@ export class ApiError extends Error {
     this.detail = detail;
   }
 
-  /** True when the server rejected the file itself (type, size, or contents). */
   get isValidation() {
     return this.status === 422 || this.status === 400;
   }
@@ -60,20 +39,11 @@ export class ApiError extends Error {
     return this.status === 404;
   }
 
-  /**
-   * True when the caller is being rate limited.
-   *
-   * Worth distinguishing from other errors because the correct response is the
-   * opposite of the usual one: a 429 must not be retried on the spot, and
-   * several console panels poll on intervals that would otherwise keep the
-   * bucket permanently empty.
-   */
   get isRateLimited() {
     return this.status === 429;
   }
 }
 
-/** FastAPI returns errors as `{ detail: string }` or `{ detail: [{msg, loc}] }`. */
 function readDetail(body: unknown, fallback: string): string {
   if (typeof body === "string" && body) return body;
   if (body && typeof body === "object" && "detail" in body) {
@@ -87,8 +57,7 @@ function readDetail(body: unknown, fallback: string): string {
   return fallback;
 }
 
-/* ── Core fetch ──────────────────────────────────────────────────────────── */
-
+// every call goes through here so errors look the same everywhere
 async function request<T>(
   path: string,
   init: RequestInit | undefined,
@@ -102,7 +71,6 @@ async function request<T>(
       headers: { Accept: "application/json", ...(init?.headers ?? {}) },
     });
   } catch {
-    // Network-level failure: server down, wrong port, or CORS refused.
     throw new ApiError(
       0,
       `Can't reach the analysis server at ${API_ORIGIN}. Start the backend, then try again.`,
@@ -120,14 +88,11 @@ async function request<T>(
   return parse(body);
 }
 
-/* ── Query string helper ─────────────────────────────────────────────────── */
-
 export interface CaseListParams {
   page?: number;
   pageSize?: number;
   mediaType?: MediaType;
   status?: CaseStatus;
-  /** Free-text search across case titles. */
   q?: string;
 }
 
@@ -142,20 +107,12 @@ function toQuery(params: CaseListParams = {}): string {
   return s ? `?${s}` : "";
 }
 
-/* ── Upload payload ──────────────────────────────────────────────────────── */
-
 export interface CreateCasePayload {
   title: string;
   mediaType: MediaType;
   file: File;
   userId?: string;
   notes?: string;
-  /**
-   * Page URL this media was captured from. Optional, and only the extension
-   * normally sets it: the server uses it as a secondary cache key so the same
-   * media encountered again at the same URL resolves without re-downloading
-   * and re-analysing it.
-   */
   sourceUrl?: string;
 }
 
@@ -167,35 +124,19 @@ export interface UpdateCasePayload {
   notes?: string;
 }
 
-/* ── Endpoints ───────────────────────────────────────────────────────────── */
-
 export const casesApi = {
-  /** GET /cases — paginated, filterable. */
   list(params?: CaseListParams): Promise<CaseListResponse> {
     return request(`/cases${toQuery(params)}`, { method: "GET" }, (raw) =>
       CaseListResponseSchema.parse(raw),
     );
   },
 
-  /** GET /cases/{case_id} — looked up by the public `CASE-XXXXXXXX` id. */
   get(caseId: string): Promise<Case> {
     return request(`/cases/${encodeURIComponent(caseId)}`, { method: "GET" }, (raw) =>
       CaseSchema.parse(raw),
     );
   },
 
-  /**
-   * POST /cases — multipart upload. Analysis is queued server-side on the
-   * BackgroundTask; the case comes back with status `processing` and the
-   * caller should poll `get()` until it settles.
-   *
-   * `onProgress` reports upload progress only (0–100), which is why this one
-   * endpoint uses XHR rather than fetch — fetch has no upload progress event.
-   */
-  /**
-   * POST /cases with `media_url` — the server downloads the media itself
-   * (and answers instantly if it has seen that URL's bytes before).
-   */
   createFromUrl(payload: { title: string; mediaType: MediaType; mediaUrl: string; userId?: string }): Promise<Case> {
     const form = new FormData();
     form.append("title", payload.title);
@@ -248,7 +189,6 @@ export const casesApi = {
     });
   },
 
-  /** PATCH /cases/{case_id} — edit title, notes, or override the verdict. */
   update(caseId: string, payload: UpdateCasePayload): Promise<Case> {
     const body: Record<string, unknown> = {};
     if (payload.title !== undefined) body.title = payload.title;
@@ -269,43 +209,27 @@ export const casesApi = {
     );
   },
 
-  /** DELETE /cases/{case_id} — removes the row and the stored evidence file. */
   remove(caseId: string): Promise<void> {
     return request(`/cases/${encodeURIComponent(caseId)}`, { method: "DELETE" }, () => undefined);
   },
 };
 
 export const statsApi = {
-  /** GET /stats — aggregate counts for the Command Center. */
   get(): Promise<DashboardStats> {
     return request(`/stats`, { method: "GET" }, (raw) => DashboardStatsSchema.parse(raw));
   },
 };
 
 export const healthApi = {
-  /** GET /health — service, database, Redis, and worker-pool reachability. */
   get(): Promise<HealthResponse> {
     return request(`/health`, { method: "GET" }, (raw) => HealthResponseSchema.parse(raw));
   },
 };
 
-/* ── Report download ─────────────────────────────────────────────────────── */
-
-/** Direct URL of a case's PDF. Useful for a link; prefer `downloadCaseReport`. */
 export function reportPdfUrl(caseId: string): string {
   return `${API_BASE}/cases/${encodeURIComponent(caseId)}/report.pdf`;
 }
 
-/**
- * Download a case's forensic report.
- *
- * Fetched as a blob rather than pointed at with `<a download>`, because the
- * endpoint can legitimately refuse: 409 while a case is still being analysed,
- * 404 for a deleted one, 429 under rate limiting. A plain link navigates the
- * browser to whichever JSON error body comes back, stranding the operator on a
- * page of raw text. Fetching keeps the failure in the UI where it can be
- * explained.
- */
 export async function downloadCaseReport(caseId: string): Promise<void> {
   let res: Response;
   try {
@@ -327,21 +251,14 @@ export async function downloadCaseReport(caseId: string): Promise<void> {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  // Revoking immediately can cancel the download in some browsers; one tick
-  // is enough for the click to have been handed off.
   setTimeout(() => URL.revokeObjectURL(href), 1000);
 }
 
-
-/* ── Queue ───────────────────────────────────────────────────────────────── */
-
 export const queueApi = {
-  /** GET /queue — depth, worker census, cache hit rate. */
   overview(): Promise<QueueOverview> {
     return request(`/queue`, { method: "GET" }, (raw) => QueueOverviewSchema.parse(raw));
   },
 
-  /** GET /queue/cases/{case_id} — one case's live job record. */
   forCase(caseId: string): Promise<JobState> {
     return request(
       `/queue/cases/${encodeURIComponent(caseId)}`,
@@ -351,35 +268,18 @@ export const queueApi = {
   },
 };
 
-/* ── Live job events (SSE) ────────────────────────────────────────────────────
-   The backend pushes every state transition on `/queue/stream`. This wraps
-   `EventSource` so callers get a typed callback and one function to stop.
-
-   EventSource is used rather than a WebSocket because the console only ever
-   listens — there is nothing to send upstream — and the browser handles
-   reconnection with backoff for free. Note that it cannot carry custom
-   headers; that is fine here because the API takes no auth, and it is worth
-   knowing before anyone adds a bearer token to this service.
-
-   Callers must keep polling as a fallback. A proxy that buffers responses, a
-   sleeping laptop, or a dropped connection can all silence the stream, and a
-   verdict that arrives only on a socket nobody is listening to is a verdict
-   the operator never sees.
-   ------------------------------------------------------------------------- */
-
 export interface JobEvent extends Partial<JobState> {
   caseDbId?: string | null;
 }
 
 export interface SubscribeOptions {
-  /** Restrict the stream to one case. Omit to receive every transition. */
   caseId?: string;
   onJob?: (event: JobEvent) => void;
   onSnapshot?: (event: JobEvent & { pendingDepth?: number }) => void;
   onError?: (error: Event) => void;
 }
 
-/** Opens the stream. Returns an unsubscribe function — always call it on unmount. */
+// server-sent events, returns a function that closes the stream
 export function subscribeToJobs(options: SubscribeOptions = {}): () => void {
   if (typeof window === "undefined" || typeof EventSource === "undefined") {
     return () => {};
@@ -411,23 +311,18 @@ export function subscribeToJobs(options: SubscribeOptions = {}): () => void {
   return () => source.close();
 }
 
-/* ── Helpers shared by the UI ────────────────────────────────────────────── */
-
-/** Resolve a stored evidence file to a URL the browser can load. */
 export function resolveMediaUrl(fileUrl?: string | null): string | undefined {
   if (!fileUrl) return undefined;
   if (/^https?:\/\//i.test(fileUrl)) return fileUrl;
   return `${API_ORIGIN}${fileUrl.startsWith("/") ? "" : "/"}${fileUrl}`;
 }
 
-/** Infer the modality the server expects from the browser's MIME type. */
 export function inferMediaType(file: File): MediaType {
   if (file.type.startsWith("video/")) return "video";
   if (file.type.startsWith("audio/")) return "audio";
   return "image";
 }
 
-/** MIME types the server accepts, mirrored from analyser.ALLOWED_TYPES. */
 export const ACCEPTED_MIME: Record<MediaType, string[]> = {
   image: ["image/jpeg", "image/png", "image/webp", "image/bmp", "image/tiff"],
   video: ["video/mp4", "video/quicktime", "video/x-msvideo", "video/webm", "video/x-matroska"],
@@ -436,13 +331,9 @@ export const ACCEPTED_MIME: Record<MediaType, string[]> = {
 
 export const ACCEPT_ATTRIBUTE = Object.values(ACCEPTED_MIME).flat().join(",");
 
-/** Server rejects anything above MAX_FILE_SIZE_MB (default 500). */
 export const MAX_FILE_MB = Number(process.env.NEXT_PUBLIC_MAX_FILE_MB ?? 500);
 
-/**
- * Client-side pre-check so an oversized or wrong-typed file fails instantly
- * instead of after a long upload. The server re-validates regardless.
- */
+// same type and size rules as the server, checked before uploading
 export function validateFile(file: File, mediaType: MediaType): string | null {
   if (!ACCEPTED_MIME[mediaType].includes(file.type)) {
     return `${file.type || "This file type"} isn't supported for ${mediaType}. Accepted: ${ACCEPTED_MIME[

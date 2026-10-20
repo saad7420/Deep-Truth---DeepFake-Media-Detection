@@ -1,14 +1,5 @@
 "use client";
 
-/* ============================================================================
-   DEEP TRUTH — EVIDENCE PREVIEW
-   ----------------------------------------------------------------------------
-   Renders the stored evidence file straight from the backend's /uploads mount.
-   While the pipeline is still running, a scanline sweeps the frame — the one
-   piece of motion in the console, reserved for the moment analysis is actually
-   happening so it reads as machine state rather than decoration.
-   ========================================================================= */
-
 import { useState } from "react";
 import { FileAudio, FileVideo, ImageOff, Image as ImageIcon } from "lucide-react";
 
@@ -60,8 +51,6 @@ export function MediaPreview({
     <figure
       className={cn(
         "relative overflow-hidden rounded-lg border border-slate-800 bg-slate-950",
-        // Both effects draw with pseudo-elements, so they take turns: the
-        // scan sweep while analysing, the evidence brackets once settled.
         analysing ? "scanline" : "reticle",
         className,
       )}
@@ -78,8 +67,6 @@ export function MediaPreview({
       )}
 
       {mediaType === "image" && (
-        // Evidence is served from an arbitrary backend origin, so next/image
-        // optimisation is deliberately bypassed here.
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={src}
@@ -114,9 +101,6 @@ export function MediaPreview({
   );
 }
 
-/* Static bar mark standing in for the waveform — the backend returns no
-   per-sample amplitude data, so this signals "audio" without implying it is
-   a real rendering of this clip. */
 function WaveformMark({ active }: { active: boolean }) {
   const bars = [30, 55, 80, 45, 95, 60, 35, 70, 50, 85, 40, 65, 30, 75, 45];
 

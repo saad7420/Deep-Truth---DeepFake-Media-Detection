@@ -28,6 +28,24 @@ deeptruth_pipeline/            the Python package AND the project root
 ├── extension/                 Chrome extension
 └── docs/                      pipeline.md (internals), platform.md (site)
 ```
+## How to run
+
+# 1. Redis, from S:\deeptruth_pipeline:
+
+python scripts\dev_redis.py
+Skip this step if you have a real Redis running on port 6379.
+
+# 2. API, from S:\deeptruth_pipeline\server:
+
+python -m uvicorn main:app --host 127.0.0.1 --port 8000
+
+# 3. Worker, from S:\deeptruth_pipeline\server:
+
+python -m celery -A app.queue.celery_app worker --loglevel=info --pool=solo --queues=analysis --without-gossip --without-mingle --hostname w1@%h
+
+# 4. Web console, from S:\deeptruth_pipeline\client:
+
+npm run dev
 
 ## What runs for each modality
 

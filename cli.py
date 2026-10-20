@@ -1,12 +1,3 @@
-"""Command-line driver.
-
-Usage:
-    python -m deeptruth_pipeline.cli /path/to/video.mp4
-    python -m deeptruth_pipeline.cli /videos/ --threshold 0.5
-    python -m deeptruth_pipeline.cli /videos/ --json results.json
-    python -m deeptruth_pipeline.cli /videos/ --device cpu
-    python -m deeptruth_pipeline.cli /videos/ --queue-workers 2
-"""
 from __future__ import annotations
 import argparse
 import json
@@ -147,6 +138,7 @@ def print_summary(log, results):
             log.info(f"{name:<42s} {kind:<6s} {'-':<8s} {'-':>7s} {'-':>6s}")
 
 
+# command line entry point
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("input", help="File or directory")

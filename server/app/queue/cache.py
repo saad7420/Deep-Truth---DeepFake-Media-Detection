@@ -1,29 +1,3 @@
-"""Hot-result cache.
-
-The expensive thing in this system is inference: eight ViT adapters over an
-image, six ViViT adapters over a video, on CPU. The cheap thing is a sha256 of
-the bytes. So before anything is queued, the bytes are hashed and Redis is
-asked whether this exact content has ever been analysed. If it has, the stored
-verdict is replayed onto the new case and no worker is involved at all.
-
-Two key spaces:
-
-    dt:cache:res:<version>:<media_type>:<sha256>   the stored verdict
-    dt:cache:url:<version>:<sha1(normalised url)>  url -> sha256
-
-The URL space exists for the browser extension, which analyses media it finds
-on a page. The same image served from the same URL usually *is* the same
-bytes, but not always (CDN re-encoding, watermarking), so a URL never returns
-a verdict directly — it resolves to a content hash, and that hash is then
-looked up in the real cache. A URL whose bytes changed simply misses, which is
-the correct outcome rather than a stale answer.
-
-Invalidation is by `version`, not by expiry. A cached verdict is only wrong if
-the models that produced it changed, and that is a deploy-time event, so
-bumping DEEPTRUTH_CACHE_VERSION retires every entry at once. Entries do not
-otherwise expire: a file analysed a year ago has the same content hash today
-and the same models still produce the same answer.
-"""
 from __future__ import annotations
 
 import hashlib
@@ -41,19 +15,13 @@ from app.queue.redis_client import get_client, key
 
 log = logging.getLogger(__name__)
 
-# Bump this whenever a checkpoint, ensemble policy, or threshold changes.
-# Every previously cached verdict becomes unreachable in one step.
+# bump this to invalidate every cached verdict
 CACHE_VERSION = os.getenv("DEEPTRUTH_CACHE_VERSION", "v1")
 
-# 0 (the default) means entries never expire. See the module docstring: the
-# version prefix is the invalidation mechanism, not time.
 CACHE_TTL = int(os.getenv("DEEPTRUTH_CACHE_TTL", "0"))
 
 _CHUNK = 1 << 20
 
-# Query parameters that identify the *click*, not the *resource*. Leaving them
-# in would make the same image cache-miss for every visitor who arrived from a
-# different campaign link.
 _TRACKING_PARAMS = {
     "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
     "utm_id", "utm_source_platform", "fbclid", "gclid", "dclid", "msclkid",
@@ -64,15 +32,7 @@ HITS_KEY = key("cache", "stats", "hits")
 MISSES_KEY = key("cache", "stats", "misses")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Keys
-# ─────────────────────────────────────────────────────────────────────────────
-
 def content_hash(data: bytes) -> str:
-    """sha256 of the raw bytes. Deliberately the full digest, not the 32-char
-    truncation `storage.media_key_from_bytes` uses — that one keys a local
-    preprocessing directory, this one keys a verdict that is served to users,
-    and a collision here would show one file's result for another's."""
     return hashlib.sha256(data).hexdigest()
 
 
@@ -84,16 +44,8 @@ def content_hash_file(path: str) -> str:
     return h.hexdigest()
 
 
+# drop tracking params so the same media gets one key
 def normalise_url(raw: str) -> str | None:
-    """Reduce a URL to the resource it names.
-
-    Lowercases scheme and host, drops the fragment (never sent to a server, so
-    it cannot affect the bytes), strips tracking parameters, and sorts what
-    remains so parameter order does not fork the cache. Returns None for
-    anything that is not a usable absolute http(s) URL — including the
-    `blob:` and `data:` URLs the extension can encounter, which are per-page
-    identifiers with no cross-session meaning.
-    """
     if not raw or not raw.strip():
         return None
     try:
@@ -120,34 +72,10 @@ def _url_key(normalised: str) -> str:
                hashlib.sha1(normalised.encode("utf-8")).hexdigest())
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Payload shape
-# ─────────────────────────────────────────────────────────────────────────────
-
 def build_payload(*, media_type: str, risk: float, likelihood: float,
                   status: str, rows: list[dict], source_case_id: str,
                   source_case_ref: str = "",
                   source_file: dict | None = None) -> dict:
-    """Freeze an analysis outcome into something replayable.
-
-    `id` and `case_id` are stripped from every row: they belong to the case
-    that happened to be analysed first, and replaying them onto a second case
-    would either collide on the analysis_results primary key or attach rows to
-    the wrong case. They are regenerated on every hit by `rehydrate_rows`.
-
-    Both ids of the originating case are kept, and they are not
-    interchangeable. `sourceCaseId` is the internal uuid — useful for tracing
-    in the database. `sourceCaseRef` is the public CASE-XXXXXXXX id, and is
-    the only one a client can actually navigate to, which is what lets the
-    extension link a cache hit back to the case that produced the verdict.
-
-    `source_file` carries the originating case's stored evidence file
-    ({name, url, size}). A case answered from cache never downloads anything,
-    so without this it has a verdict and no media, and the report page renders
-    a blank evidence panel. The replay points the new case at the file the
-    first case already stored — the bytes are identical by definition, since
-    the content hash is what matched.
-    """
     return {
         "mediaType": media_type,
         "risk": risk,
@@ -171,8 +99,6 @@ def build_payload(*, media_type: str, risk: float, likelihood: float,
 
 
 def rehydrate_rows(payload: dict, case_db_id: str) -> list[dict]:
-    """Turn a cached payload back into insertable analysis_results rows for a
-    different case."""
     rows: list[dict] = []
     for r in payload.get("rows", []):
         rows.append({
@@ -186,17 +112,7 @@ def rehydrate_rows(payload: dict, case_db_id: str) -> list[dict]:
     return rows
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Lookup / store
-# ─────────────────────────────────────────────────────────────────────────────
-
 def lookup(media_type: str, sha: str) -> dict | None:
-    """The stored verdict for this exact content, or None.
-
-    Never raises. A Redis hiccup on the read path must degrade to a cache
-    miss — recomputing is slow but correct, whereas failing the request would
-    turn a cache outage into an outage.
-    """
     client = get_client()
     try:
         raw = client.get(_result_key(media_type, sha))
@@ -222,14 +138,8 @@ def lookup(media_type: str, sha: str) -> dict | None:
     return payload
 
 
+# a url only resolves to a hash, never straight to a verdict
 def lookup_by_url(media_type: str, url: str) -> tuple[str | None, dict | None]:
-    """Resolve a URL to (content_hash, verdict).
-
-    A URL we have seen before yields its content hash even when the verdict is
-    gone, which is still useful: it tells the caller these bytes were
-    previously fetched from here. The verdict is only returned when the real
-    content-keyed entry is present.
-    """
     normalised = normalise_url(url)
     if not normalised:
         return (None, None)
@@ -246,14 +156,9 @@ def lookup_by_url(media_type: str, url: str) -> tuple[str | None, dict | None]:
     return (sha, lookup(media_type, sha))
 
 
+# best effort: a cache failure must not fail the job
 def store(media_type: str, sha: str, payload: dict, *,
           source_url: str | None = None) -> None:
-    """Persist a verdict, and optionally remember which URL produced it.
-
-    Best-effort by design: this runs after the analysis has already been
-    written to SQLite, so failing to cache costs a recomputation next time and
-    nothing else. It must not turn a completed job into a failed one.
-    """
     client = get_client()
     blob = json.dumps(payload)
     try:
@@ -264,11 +169,6 @@ def store(media_type: str, sha: str, payload: dict, *,
 
         normalised = normalise_url(source_url or "")
         if normalised:
-            # The URL alias tracks the *latest* bytes seen at that URL. If a
-            # CDN re-encodes the image, the next visitor's fetch produces a
-            # new hash and this pointer moves — which is what keeps the URL
-            # path from ever serving a verdict for content that no longer
-            # lives there.
             if CACHE_TTL > 0:
                 client.setex(_url_key(normalised), CACHE_TTL, sha)
             else:
@@ -278,11 +178,6 @@ def store(media_type: str, sha: str, payload: dict, *,
 
 
 def remember_url(url: str, sha: str) -> None:
-    """Record url -> content hash without having a verdict yet.
-
-    Called at upload time so that even a job which later fails has taught the
-    system what bytes that URL serves.
-    """
     normalised = normalise_url(url)
     if not normalised:
         return
@@ -303,10 +198,6 @@ def invalidate(media_type: str, sha: str) -> None:
         log.warning("could not invalidate %s: %s", sha[:12], exc)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Observability
-# ─────────────────────────────────────────────────────────────────────────────
-
 def _bump(client: redis.Redis, k: str) -> None:
     try:
         client.incr(k)
@@ -315,7 +206,6 @@ def _bump(client: redis.Redis, k: str) -> None:
 
 
 def stats() -> dict[str, Any]:
-    """Hit/miss counters and the number of live entries, for /api/queue."""
     client = get_client()
     try:
         hits = int(client.get(HITS_KEY) or 0)

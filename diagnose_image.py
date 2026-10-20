@@ -1,25 +1,4 @@
 #!/usr/bin/env python3
-"""
-Trace exactly why an image got its verdict, and check whether the PEFT
-forward-signature bug (see inferencers/image.py::_forward and
-inferencers/video.py::_predict_one) is present on this machine.
-
-    python diagnose_image.py /path/to/photo.jpg
-
-Mirrors diagnose_video.py's structure. Where the two genuinely differ:
-
-  * Image checkpoints load via PeftModel.from_pretrained(base, ckpt_path),
-    reading whatever task_type each checkpoint's own adapter_config.json
-    was saved with. Video's _build_model() hardcodes
-    TaskType.FEATURE_EXTRACTION in code, used identically at train and
-    inference time. This repo has no image training script (deeptruth_train.py
-    is video-only), so there is no way to inspect what task_type the image
-    checkpoints were actually saved with from code — only from running this.
-
-  * The image ensemble is generalist/face weighted-average with a
-    max-alarm rule when a face is trusted (image_ensemble_decide), not
-    video's discrete "trusted / not trusted" cliff at MIN_FACE_FRAMES.
-"""
 from __future__ import annotations
 
 import sys
@@ -44,7 +23,7 @@ def die(msg: str, fix: str) -> None:
 
 def main() -> None:
     if len(sys.argv) < 2:
-        print(__doc__)
+        print("usage: python diagnose_image.py /path/to/photo.jpg")
         sys.exit(2)
 
     src = Path(sys.argv[1]).expanduser().resolve()
@@ -55,7 +34,6 @@ def main() -> None:
     print("=" * 66)
     print(f"file  {src.name}")
 
-    # ── Dependencies ─────────────────────────────────────────────────────────
     head("1. Dependencies")
 
     try:
@@ -80,7 +58,7 @@ def main() -> None:
         die("torch is not installed", "pip install -r server/requirements.txt")
 
     try:
-        import facenet_pytorch  # noqa: F401
+        import facenet_pytorch
 
         face_available = True
         print(f"{GREEN}ok{RESET}    facenet-pytorch present")
@@ -89,7 +67,6 @@ def main() -> None:
         print(f"{YELLOW}warn{RESET}  facenet-pytorch missing — face-crop "
               f"checkpoints will be skipped for every image")
 
-    # ── Discovery ────────────────────────────────────────────────────────────
     head("2. Checkpoint discovery")
 
     from deeptruth_pipeline.config import IMAGE_CHECKPOINT_DIR
@@ -98,14 +75,13 @@ def main() -> None:
     inf = ImageInferencer(checkpoint_dir=IMAGE_CHECKPOINT_DIR)
     try:
         inf._setup()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         die(f"could not initialise the inferencer: {exc}",
             "run verify_setup.py — most likely the checkpoints aren't found")
 
     print(f"      {len(inf._checkpoints)} checkpoints discovered "
           f"at {IMAGE_CHECKPOINT_DIR}")
 
-    # ── Load + score each checkpoint, catching the exact bug we're hunting ──
     head("3. Per-checkpoint load + score")
 
     from deeptruth_pipeline.preprocessors.image import ImagePreprocessor
@@ -151,7 +127,7 @@ def main() -> None:
                       f"the PEFT input_ids bug — {exc}")
             else:
                 print(f"      {ckpt['slug']:<20} {RED}FAILED{RESET} {exc}")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             print(f"      {ckpt['slug']:<20} {RED}FAILED{RESET} {exc}")
 
     if input_ids_bug_hit:
@@ -167,7 +143,6 @@ def main() -> None:
     if not per_ckpt:
         die("no checkpoint produced a score", "see failures above")
 
-    # ── Decision ─────────────────────────────────────────────────────────────
     head("4. Ensemble decision")
 
     from deeptruth_pipeline.ensemble import image_ensemble_decide

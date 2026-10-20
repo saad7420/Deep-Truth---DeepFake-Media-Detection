@@ -1,22 +1,3 @@
-"""WavLM-Large audio deepfake inferencer.
-
-Plugs into the DeepTruth pipeline as the real AudioInferencer.
-Mirrors the architecture trained in the FYP:
-  - WavLM-Large backbone, top-6 transformer layers unfrozen
-  - 3-layer progressive-dropout classifier head (1024 → 256 → 64 → 2)
-  - Trained on ASVspoof 2019 LA; checkpoint at /audiomodel/final_model
-
-Audio contract from AudioPreprocessor:
-    preprocessed["audio_wav_path"] = path to mono 16 kHz WAV
-
-Usage (drop-in replacement for the stub):
-    from deeptruth_pipeline.inferencers.audio import WavLMAudioInferencer
-    from deeptruth_pipeline import Registry, Pipeline
-
-    registry = Registry()
-    registry.replace_inferencer("audio", WavLMAudioInferencer())
-    pipeline = Pipeline(registry=registry)
-"""
 from __future__ import annotations
 
 import logging
@@ -31,25 +12,21 @@ from ..config import USE_FP16, DEFAULT_THRESHOLD
 
 log = logging.getLogger(__name__)
 
-# ── constants matching training ──────────────────────────────────────────────
 MODEL_ID        = "microsoft/wavlm-large"
 SAMPLE_RATE     = 16_000
-MAX_AUDIO_SEC   = 4                          # pad / truncate to 4 s
-MAX_SAMPLES     = SAMPLE_RATE * MAX_AUDIO_SEC   # 64 000 samples
-UNFREEZE_LAYERS = 6                          # top-N transformer layers trained
-HEAD_DIMS       = [1024, 256, 64, 2]        # classifier widths (includes logit dim)
+MAX_AUDIO_SEC   = 4
+MAX_SAMPLES     = SAMPLE_RATE * MAX_AUDIO_SEC
+# only the top 6 transformer layers are fine-tuned
+UNFREEZE_LAYERS = 6
+HEAD_DIMS       = [1024, 256, 64, 2]
 
-# Default checkpoint location; override with DEEPTRUTH_AUDIO_CHECKPOINT env var
 DEFAULT_AUDIO_CKPT = os.environ.get(
     "DEEPTRUTH_AUDIO_CHECKPOINT",
     "/audiomodel/final_model",
 )
 
 
-# ── model builder ────────────────────────────────────────────────────────────
-
 def _build_wavlm_model(device, fp16: bool):
-    """Reconstruct the WavLM + classifier head used during training."""
     import torch
     import torch.nn as nn
     from transformers import WavLMModel
@@ -59,7 +36,6 @@ def _build_wavlm_model(device, fp16: bool):
             super().__init__()
             self.wavlm = WavLMModel.from_pretrained(MODEL_ID)
 
-            # Freeze all params, then unfreeze the top-N transformer layers
             for p in self.wavlm.parameters():
                 p.requires_grad_(False)
             n_layers = len(self.wavlm.encoder.layers)
@@ -67,7 +43,6 @@ def _build_wavlm_model(device, fp16: bool):
                 for p in layer.parameters():
                     p.requires_grad_(True)
 
-            # Progressive-dropout classifier head
             hidden = HEAD_DIMS[0]
             self.classifier = nn.Sequential(
                 nn.Linear(hidden, HEAD_DIMS[1]),
@@ -82,7 +57,7 @@ def _build_wavlm_model(device, fp16: bool):
         def forward(self, input_values, attention_mask=None):
             out = self.wavlm(input_values=input_values,
                              attention_mask=attention_mask)
-            # mean-pool hidden states along time axis
+            # average over time to get one vector per clip
             hidden = out.last_hidden_state.mean(dim=1)
             return self.classifier(hidden)
 
@@ -93,10 +68,7 @@ def _build_wavlm_model(device, fp16: bool):
     return model
 
 
-# ── inferencer ───────────────────────────────────────────────────────────────
-
 class WavLMAudioInferencer(Inferencer):
-    """Real audio inferencer – replaces AudioInferencer stub."""
 
     modality = "audio"
 
@@ -117,8 +89,6 @@ class WavLMAudioInferencer(Inferencer):
         self._model = None
         self._feature_extractor = None
         self._device = None
-
-    # ── Inferencer protocol ──────────────────────────────────────────────────
 
     def supports(self, media_kind: str) -> bool:
         return media_kind == "audio"
@@ -147,7 +117,7 @@ class WavLMAudioInferencer(Inferencer):
             modality    = "audio",
             trust_score = p_fake,
             verdict     = verdict,
-            confidence  = 1.0,                # single-model; no ensemble spread
+            confidence  = 1.0,
             per_model   = {"wavlm_large": p_fake},
             rationale   = (
                 f"WavLM-Large (top-{UNFREEZE_LAYERS} layers fine-tuned on "
@@ -161,8 +131,6 @@ class WavLMAudioInferencer(Inferencer):
                 "threshold":    threshold,
             },
         )
-
-    # ── internals ───────────────────────────────────────────────────────────
 
     def _setup(self):
         if self._model is not None:
@@ -194,7 +162,6 @@ class WavLMAudioInferencer(Inferencer):
                 f"Set DEEPTRUTH_AUDIO_CHECKPOINT to the correct path."
             )
 
-        # Support both .pt files and HuggingFace-style directories
         if ckpt.is_dir():
             import torch
             state_dict = torch.load(ckpt / "model.pt",
@@ -203,7 +170,6 @@ class WavLMAudioInferencer(Inferencer):
             import torch
             state_dict = torch.load(ckpt, map_location=self._device)
 
-        # Strip optional "module." prefix (DataParallel-saved checkpoints)
         if any(k.startswith("module.") for k in state_dict.keys()):
             state_dict = {k[len("module."):]: v for k, v in state_dict.items()}
 
@@ -211,24 +177,21 @@ class WavLMAudioInferencer(Inferencer):
         self._model.eval()
         log.info("WavLMAudioInferencer: model loaded and ready.")
 
+    # mono, 16 kHz, padded or cut to 4 seconds
     def _load_waveform(self, wav_path: str) -> "torch.Tensor":
-        """Load, resample if needed, pad/truncate to MAX_SAMPLES."""
         from scipy.signal import resample_poly
         import soundfile as sf
 
         audio, sr = sf.read(wav_path, dtype="float32", always_2d=False)
 
-        # Mono
         if audio.ndim > 1:
             audio = audio.mean(axis=1)
 
-        # Resample to 16 kHz if the WAV isn't already
         if sr != SAMPLE_RATE:
             from math import gcd
             g = gcd(SAMPLE_RATE, sr)
             audio = resample_poly(audio, SAMPLE_RATE // g, sr // g).astype("float32")
 
-        # Pad / truncate
         if len(audio) < MAX_SAMPLES:
             audio = np.pad(audio, (0, MAX_SAMPLES - len(audio)))
         else:
@@ -258,7 +221,7 @@ class WavLMAudioInferencer(Inferencer):
 
             probs = torch.softmax(logits.float(), dim=-1).cpu().numpy()[0]
 
-        # label 1 = fake (matches ASVspoof 2019 convention used during training)
+        # label 1 means spoof
         return float(probs[1])
 
     def unload(self):

@@ -1,14 +1,3 @@
-"""Wires preprocessors and inferencers to media kinds.
-
-Video and image are implemented end-to-end. Audio is too, once a checkpoint
-is configured: set DEEPTRUTH_AUDIO_CHECKPOINT and the real WavLM inferencer
-is selected automatically in place of the stub. Without it, audio
-preprocessing (ffmpeg WAV extract) still runs but inference stays stubbed,
-so the channel reports "no signal" rather than a fabricated verdict.
-
-Replace components with .replace_preprocessor() / .replace_inferencer() to
-inject custom configurations.
-"""
 from __future__ import annotations
 
 import logging
@@ -32,11 +21,6 @@ log = logging.getLogger(__name__)
 
 
 class _NeutralSRMInferencer(Inferencer):
-    """Used when no SRM checkpoint is configured. Distinct from SRMInferencer
-    itself (which also soft-fails to neutral without a checkpoint) so that a
-    completely disabled SRM channel never even attempts feature extraction —
-    useful for a deployment that wants zero SRM overhead rather than "compute
-    features, then discard them" on every single video/image case."""
     modality = "srm"
 
     def supports(self, media_kind: str) -> bool:
@@ -50,18 +34,8 @@ class _NeutralSRMInferencer(Inferencer):
             rationale="SRM Noise Analysis (M8) not yet trained — no checkpoint configured")
 
 
+# feature extraction always runs, the classifier is optional
 def _default_srm_inferencer() -> Inferencer:
-    """SRMInferencer always runs real feature extraction (cheap: pure numpy
-    convolution over a handful of small frames, no GPU, no torch import
-    needed for that half). It only needs a checkpoint for the classifier
-    step, and soft-fails to a neutral result with the features attached as
-    evidence when one isn't configured yet — so unlike audio, there is no
-    reason to swap the whole inferencer out; the same object handles both
-    states.
-
-    DEEPTRUTH_SRM_DISABLE skips this entirely for a deployment that wants
-    zero SRM overhead (e.g. very high case volume, resource-constrained).
-    """
     if os.environ.get("DEEPTRUTH_SRM_DISABLE", "").lower() in ("1", "true", "yes"):
         return _NeutralSRMInferencer()
 
@@ -72,14 +46,8 @@ def _default_srm_inferencer() -> Inferencer:
     return SRMInferencer(checkpoint_path=SRM_CHECKPOINT, threshold=SRM_THRESHOLD)
 
 
+# real WavLM only when a checkpoint is configured
 def _default_audio_inferencer() -> Inferencer:
-    """Real WavLM inferencer when a checkpoint is configured, else the stub.
-
-    Import is deferred into this function because inferencers/audio.py pulls
-    in torch and transformers at call time; a deployment running only the
-    video branch should not pay that cost, and a broken audio install should
-    not stop the whole registry from constructing.
-    """
     if not AUDIO_CHECKPOINT:
         return AudioInferencer()
 
@@ -89,7 +57,7 @@ def _default_audio_inferencer() -> Inferencer:
                  f"(threshold {AUDIO_THRESHOLD})")
         return WavLMAudioInferencer(checkpoint_path=AUDIO_CHECKPOINT,
                                     threshold=AUDIO_THRESHOLD)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.warning(f"audio: could not build WavLM inferencer ({exc}); "
                     f"falling back to the stub")
         return AudioInferencer()

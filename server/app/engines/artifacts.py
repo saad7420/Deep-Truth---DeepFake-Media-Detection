@@ -1,14 +1,3 @@
-"""Publishing artifact maps (M7 FE-3) for the console to load.
-
-The pipeline writes a rendered map beside its preprocessed tensors, under
-DEEPTRUTH_CACHE — deliberately, so it is cached and evicted on the same terms
-as everything else derived from that file. That directory is not web-served,
-and mounting it would expose the whole preprocessing cache; copying one file
-out is the narrower option.
-
-Shared by the image and visual engines because both now produce maps and the
-only difference between them is what the picture contains.
-"""
 from __future__ import annotations
 
 import logging
@@ -24,13 +13,6 @@ ARTIFACT_BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
 
 
 def publish(record: dict | None) -> dict | None:
-    """Copy a rendered map into the served directory and swap path for URL.
-
-    The local `path` is dropped: a filesystem path on the analysis host is of
-    no use to a browser and only discloses server layout. Returns None if
-    there is nothing to publish, which is the normal case for a modality with
-    no map — never an error.
-    """
     if not record:
         return None
 

@@ -1,21 +1,5 @@
 "use client";
 
-/* ============================================================================
-   DEEP TRUTH — CASE TABLE
-   ----------------------------------------------------------------------------
-   Shared by the Command Center and Case History so a case row looks and links
-   identically in both. Rows link by the public `caseId` (CASE-XXXXXXXX), which
-   is what GET /cases/{case_id} looks up — the internal UUID `id` is never a
-   valid URL segment.
-
-   Two renderings of the same data: stacked cards below `md`, the full table
-   from `md` up. The table previously carried `min-w-[720px]` inside a
-   horizontal scroller, which on a phone meant every column past "Subject"
-   was off-screen and reachable only by sideways-scrolling a nested region.
-   Delete is a always-visible control here rather than a hover-reveal, since
-   `opacity-0 group-hover:opacity-100` never resolves on a touch device.
-   ========================================================================= */
-
 import Link from "next/link";
 import { FileAudio, FileVideo, Image as ImageIcon, Trash2, type LucideIcon } from "lucide-react";
 
@@ -74,7 +58,6 @@ export function CaseTable({
 
   return (
     <>
-      {/* ── Mobile: stacked cards ─────────────────────────────────────────── */}
       <ul className="divide-y divide-slate-800/70 md:hidden">
         {cases.map((c) => {
           const Icon = MEDIA_ICON[c.mediaType];
@@ -131,7 +114,6 @@ export function CaseTable({
         })}
       </ul>
 
-      {/* ── Desktop: full table ───────────────────────────────────────────── */}
       <div className="hidden overflow-x-auto md:block">
         <table className="w-full text-left text-sm">
           <thead>
@@ -195,9 +177,6 @@ export function CaseTable({
                   <td className="whitespace-nowrap px-5 py-3.5">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <StatusBadge status={c.status} size="sm" />
-                      {/* Only while unsettled: on a finished case the verdict
-                          badge already says everything, and a second badge
-                          repeating "complete" is noise in a dense table. */}
                       {c.status === "processing" && <JobBadge job={c.job} size="sm" />}
                     </div>
                   </td>
@@ -234,8 +213,6 @@ export function CaseTable({
     </>
   );
 }
-
-/* ── Loading placeholder ─────────────────────────────────────────────────── */
 
 function SkeletonRows({ showSize }: { showSize?: boolean }) {
   const widths = ["w-24", "w-40", "w-16", "w-14", "w-20", "w-24", "w-10"];

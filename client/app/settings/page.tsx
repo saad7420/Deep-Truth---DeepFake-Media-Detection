@@ -1,14 +1,5 @@
 "use client";
 
-/* ============================================================================
-   DEEP TRUTH — SETTINGS
-   ----------------------------------------------------------------------------
-   Only settings the console can actually honour appear here. Anything that
-   would need a backend endpoint the server doesn't expose (model selection,
-   retention windows, API keys) lives on Configuration as read-only state
-   instead of as a control that does nothing.
-   ========================================================================= */
-
 import { useEffect, useState } from "react";
 import { Check, Loader2, Plug, RotateCcw, Save, User } from "lucide-react";
 
@@ -61,7 +52,6 @@ export default function SettingsPage() {
       const raw = localStorage.getItem(PREFS_KEY);
       if (raw) setPrefs({ ...DEFAULT_PREFS, ...(JSON.parse(raw) as Prefs) });
     } catch {
-      /* fall back to defaults */
     }
   }, [operator]);
 
@@ -103,7 +93,6 @@ export default function SettingsPage() {
         description="Your operator profile and how this console behaves."
       />
 
-      {/* ── Profile ───────────────────────────────────────────────────────── */}
       <Panel className="overflow-hidden">
         <PanelHeading
           icon={User}
@@ -155,7 +144,6 @@ export default function SettingsPage() {
         </div>
       </Panel>
 
-      {/* ── Preferences ───────────────────────────────────────────────────── */}
       <Panel className="overflow-hidden">
         <PanelHeading title="Console preferences" hint="Applied on this device only" />
         <div className="divide-y divide-slate-800/70">
@@ -213,7 +201,6 @@ export default function SettingsPage() {
         </div>
       </Panel>
 
-      {/* ── Connection ────────────────────────────────────────────────────── */}
       <Panel className="p-5">
         <div className="mb-4 flex items-center justify-between">
           <SectionRule label="Analysis server" />
@@ -251,8 +238,6 @@ export default function SettingsPage() {
     </AppShell>
   );
 }
-
-/* ── Local pieces ────────────────────────────────────────────────────────── */
 
 function Field({
   label,

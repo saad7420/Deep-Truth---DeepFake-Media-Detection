@@ -1,13 +1,3 @@
-"""ViViT + LoRA ensemble inferencer.
-
-Discovers all *_lora_best checkpoints under CHECKPOINT_DIR, routes each one
-to its required preprocessing branch (face vs full-frame), runs inference,
-and combines per-checkpoint scores via ensemble_decide().
-
-Loaded models are cached on the instance so subsequent predict() calls
-across multiple videos don't pay reload cost. Call .unload() to free GPU
-memory when done.
-"""
 from __future__ import annotations
 import logging
 import time
@@ -126,6 +116,7 @@ class VideoInferencer(Inferencer):
         self._loaded_models.clear()
         self._maybe_empty_cuda()
 
+    # score every checkpoint, then ensemble the results
     def predict(self, media_key: str, preprocessed: dict[str, Any],
                 **opts) -> InferenceResult:
         self._setup()
@@ -143,10 +134,6 @@ class VideoInferencer(Inferencer):
         per_ckpt: dict[str, float] = {}
 
         want_maps = bool(opts.get("artifact_maps", ARTIFACT_MAPS_ENABLED))
-        # Keyed by branch, because a face-branch cube is in face-crop
-        # coordinates and a full-frame cube is not. Fusing across branches
-        # would misplace the evidence, so each branch is rendered over the
-        # frames it actually saw and they are kept apart.
         cubes: dict[str, dict[str, np.ndarray]] = {"face": {}, "full": {}}
 
         for ckpt in self._checkpoints:
@@ -162,11 +149,6 @@ class VideoInferencer(Inferencer):
                 log.info(f"  {ckpt['name']:<22s} P(fake)={p_fake:.4f}  "
                          f"({time.time() - t0:.1f}s)")
 
-                # ── Artifact map (M7 FE-3) ───────────────────────────────
-                # A backward pass through ViViT costs about as much as the
-                # forward one, so this is gated on the checkpoint actually
-                # claiming something. It can never affect `p_fake`: the score
-                # is already recorded above, and every failure here is caught.
                 if want_maps and p_fake >= ARTIFACT_MAP_MIN_SCORE:
                     tm = time.time()
                     cube = artifact_map.compute_video_cam(
@@ -214,7 +196,6 @@ class VideoInferencer(Inferencer):
         )
 
     def _to_pixel_values(self, frames: np.ndarray):
-        """Frames -> the tensor the model takes. Mirrors _predict_one."""
         inputs = self._processor(list(frames), return_tensors="pt")
         return inputs["pixel_values"].to(self._device)
 
@@ -222,18 +203,6 @@ class VideoInferencer(Inferencer):
                             cubes: dict[str, dict[str, np.ndarray]],
                             per_ckpt: dict[str, float],
                             frames_by_branch: dict[str, np.ndarray]) -> dict | None:
-        """Fuse the cubes, render a contact sheet, return the record.
-
-        The face branch wins when both produced maps. Its checkpoints look at
-        the crop, so their localisation is the finer of the two — the whole
-        frame branch will happily point at a region that merely contains the
-        face. Which branch was drawn is recorded either way, because "the
-        model was looking at the whole frame" is itself worth knowing.
-
-        Written beside the preprocessed tensors under the same media_key, so
-        it is cached and evicted on the same terms as everything else derived
-        from this file.
-        """
         for branch in ("face", "full"):
             branch_cubes = cubes.get(branch) or {}
             frames = frames_by_branch.get(branch)
@@ -273,7 +242,7 @@ class VideoInferencer(Inferencer):
                          f"temporally_localised={record['temporally_localised']}")
                 return record
 
-            except Exception as e:  # noqa: BLE001 — never fail a case over a picture
+            except Exception as e:
                 log.warning(f"  artifact map ({branch}) failed: {e}")
 
         return None
@@ -283,32 +252,14 @@ class VideoInferencer(Inferencer):
         inputs = self._processor(list(frames), return_tensors="pt")
         pixel_values = inputs["pixel_values"].to(self._device)
 
-        # PEFT's TaskType.FEATURE_EXTRACTION has no vision-specific wrapper
-        # class (unlike TaskType.SEQ_CLS, CAUSAL_LM, etc.), so get_peft_model()
-        # falls back to the generic base PeftModel. That class's forward() has
-        # a signature hardcoded for text models — it unconditionally calls
-        # self.base_model(input_ids=input_ids, ...) regardless of what kwargs
-        # were actually passed to it (see huggingface/peft#796, #2291 for the
-        # identical failure on other vision/multimodal models). ViViT's
-        # forward() has no input_ids parameter at all, so that call raises
-        # "got an unexpected keyword argument 'input_ids'" on every single
-        # checkpoint, every time — this is not intermittent or file-specific.
-        #
-        # This has been observed with peft 0.20.0; server/requirements.txt
-        # pins only peft>=0.19 with no upper bound, so it was never validated
-        # against 0.20.x specifically. The fix below works regardless of
-        # which peft version is installed: call the model PEFT actually
-        # wraps around, not the PeftModel shell. LoRA is applied by swapping
-        # individual nn.Linear layers in place, not by intercepting at
-        # PeftModel.forward(), so get_base_model() still runs with the LoRA
-        # weights active — this bypasses only the broken signature, not the
-        # adapter itself.
+        # same peft workaround as the image inferencer
         call_target = model.get_base_model() if hasattr(model, "get_base_model") else model
 
         with torch.no_grad():
             if self._device.type == "cuda" and USE_FP16:
                 with torch.cuda.amp.autocast(dtype=torch.float16):
                     out = call_target(pixel_values=pixel_values,
+                                      # pretrained on 32 frames, we use 16
                                       interpolate_pos_encoding=True)
             else:
                 out = call_target(pixel_values=pixel_values,

@@ -1,7 +1,3 @@
-"""Tests for the audio-visual fusion layer (Module 9).
-
-Run from server/:  python -m pytest tests/test_fusion.py -q
-"""
 import asyncio
 import json
 import os
@@ -9,10 +5,10 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.engines.base import EngineResult  # noqa: E402
-from app.services.fusion import Stream, fuse  # noqa: E402
+from app.engines.base import EngineResult
+from app.services.fusion import Stream, fuse
 
-EXP = 0.25  # experimental audio weight (default)
+EXP = 0.25
 
 
 def test_face_swap_over_real_voice_is_visual_only():
@@ -23,11 +19,10 @@ def test_face_swap_over_real_voice_is_visual_only():
 
 
 def test_real_footage_with_cloned_voice_is_audio_only():
-    """The scenario the frames alone can never catch (BO-7)."""
     r = fuse(Stream("visual", 0.10, 0.8), Stream("audio", 0.95, 0.9))
     assert r.manipulation_type == "audio_only"
     assert r.deciding_stream == "audio"
-    assert r.fake_prob >= 0.65          # validated audio can convict
+    assert r.fake_prob >= 0.65
 
 
 def test_both_streams_fake():
@@ -43,10 +38,9 @@ def test_both_streams_clean():
 
 
 def test_experimental_audio_cannot_convict_alone():
-    """Unvalidated audio at 100% fake may raise doubt, never 'manipulated'."""
     r = fuse(Stream("visual", 0.10, 0.8), Stream("audio", 1.0, 1.0, EXP))
     assert r.manipulation_type == "audio_only"
-    assert 0.35 < r.fake_prob < 0.65    # inconclusive band
+    assert 0.35 < r.fake_prob < 0.65
     assert "experimental" in r.rationale
 
 
@@ -87,7 +81,6 @@ class _FakeRegistry:
 
 
 def test_analyser_writes_one_fused_summary_row(monkeypatch):
-    """End-to-end through analyser: one summary row, per-stream rows kept."""
     from app.services import analyser
 
     visual = EngineResult("visual", 0.2, 0.8, 0.7,
@@ -111,7 +104,7 @@ def test_analyser_writes_one_fused_summary_row(monkeypatch):
     summary = next(json.loads(r["details"]) for r in rows
                    if json.loads(r["details"])["tier"] == "summary")
     assert summary["manipulation_type"] == "audio_only"
-    assert summary["n_face_detected"] == 12      # visual evidence carried over
+    assert summary["n_face_detected"] == 12
     assert status == "manipulated" and risk == 95.0
     signals = {json.loads(r["details"]).get("signal") for r in rows}
     assert {"visual_stream", "audio_stream"} <= signals

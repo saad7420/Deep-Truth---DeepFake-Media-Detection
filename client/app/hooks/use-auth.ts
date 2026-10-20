@@ -1,18 +1,5 @@
 "use client";
 
-/* ============================================================================
-   DEEP TRUTH — OPERATOR SESSION
-   ----------------------------------------------------------------------------
-   The FastAPI service has no auth layer (see server/app/core.py — only the
-   cases and health routers are mounted), so there is no token to exchange and
-   nothing to verify against. This hook keeps a local operator profile instead,
-   which is what the console actually needs today: a name and an id to stamp on
-   uploads via the `user_id` form field, and a session to end.
-
-   When the backend grows real auth, swap the body of `signIn`/`signOut` for
-   calls to it and leave every consumer of this hook untouched.
-   ========================================================================= */
-
 import { useCallback, useEffect, useState } from "react";
 
 const STORAGE_KEY = "deeptruth.operator";
@@ -39,6 +26,7 @@ function read(): Operator | null {
   }
 }
 
+// local operator profile only, the api has no login yet
 export function useAuth() {
   const [operator, setOperator] = useState<Operator | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -47,7 +35,6 @@ export function useAuth() {
     setOperator(read() ?? GUEST);
     setIsLoading(false);
 
-    // Keep tabs in sync when the operator signs in or out elsewhere.
     const onStorage = (e: StorageEvent) => {
       if (e.key === STORAGE_KEY) setOperator(read() ?? GUEST);
     };

@@ -6,11 +6,6 @@ import { useEffect } from "react";
 import { Button } from "@/app/components/ui/button";
 import { cn } from "@/app/lib/utils";
 
-/**
- * Confirmation for irreversible actions. The confirm button repeats the verb
- * from the title ("Delete case", not "OK") so the operator reads what will
- * happen at the moment they commit to it.
- */
 export function ConfirmDialog({
   open,
   title,

@@ -1,15 +1,3 @@
-/* ============================================================================
-   DEEP TRUTH EXTENSION — POPUP
-   ----------------------------------------------------------------------------
-   Three jobs: show whether the backend is reachable, let the operator point
-   the extension at it, and list recent scans with links into the console.
-
-   The "simulated mode" toggle is gone. It defaulted to on and filled the
-   history with randomly generated verdicts, which meant the honest failure
-   state — "the server isn't running" — was never visible. That state is now
-   the first thing this panel reports.
-   ========================================================================= */
-
 import React, { useCallback, useEffect, useState } from 'react';
 import './Popup.css';
 
@@ -115,9 +103,6 @@ const Popup: React.FC = () => {
   };
 
   const openCase = (caseId: string) => {
-    // The console and the API share a host in the default local setup; the
-    // console serves the case page, so swap the API port for the Next.js one
-    // only when the operator has not moved things around.
     const consoleBase = apiUrl.replace(/:8000$/, ':3000');
     chrome.tabs.create({ url: `${consoleBase}/cases/${caseId}` });
   };
@@ -145,7 +130,6 @@ const Popup: React.FC = () => {
         </button>
       </header>
 
-      {/* ── Connection ────────────────────────────────────────────────────── */}
       <section className={`dt-status dt-status-${health.state}`}>
         <span className="dt-status-dot" aria-hidden="true" />
         <div className="dt-status-body">
@@ -170,7 +154,6 @@ const Popup: React.FC = () => {
         </p>
       )}
 
-      {/* ── Settings ──────────────────────────────────────────────────────── */}
       <section className="dt-section">
         <button
           type="button"
@@ -209,7 +192,6 @@ const Popup: React.FC = () => {
         {notice && <p className="dt-notice">{notice}</p>}
       </section>
 
-      {/* ── History ───────────────────────────────────────────────────────── */}
       <section className="dt-section dt-history">
         <div className="dt-history-head">
           <span>Recent scans</span>

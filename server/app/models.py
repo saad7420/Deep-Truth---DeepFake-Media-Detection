@@ -1,7 +1,3 @@
-"""
-Pydantic schemas — request bodies & API responses.
-"""
-
 from __future__ import annotations
 from typing import Literal, Optional, List
 from datetime import datetime
@@ -13,12 +9,7 @@ MediaType = Literal["image", "video", "audio"]
 CaseStatus = Literal["processing", "authentic", "manipulated", "inconclusive", "failed"]
 
 
-# ── Shared ────────────────────────────────────────────────────────────────────
-
 class AnalysisResult(BaseModel):
-    # `model_name` collides with pydantic's protected "model_" namespace and
-    # warns on every import; the field name is part of the API contract, so
-    # opt out of the check instead of renaming it.
     model_config = {"protected_namespaces": ()}
 
     id: str
@@ -30,8 +21,6 @@ class AnalysisResult(BaseModel):
     created_at: datetime
 
 
-# ── Case ──────────────────────────────────────────────────────────────────────
-
 class CaseBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     media_type: MediaType
@@ -40,12 +29,10 @@ class CaseBase(BaseModel):
 
 
 class CaseCreate(CaseBase):
-    """Body for POST /cases (form fields; file sent as multipart)."""
     pass
 
 
 class CaseUpdate(BaseModel):
-    """Body for PATCH /cases/{id}."""
     title: Optional[str] = Field(None, min_length=1, max_length=200)
     status: Optional[CaseStatus] = None
     risk_score: Optional[float] = Field(None, ge=0, le=100)
@@ -54,20 +41,9 @@ class CaseUpdate(BaseModel):
 
 
 class JobState(BaseModel):
-    """Live orchestration state for a case, read from Redis (app/queue/state.py).
-
-    Separate from `CaseStatus`: that field records what the analysis
-    *concluded*, this one records what the job is *doing*. A case can be
-    `status="processing"` while its job is `state="retrying"` on attempt 2,
-    and the console needs to show the difference.
-
-    None on a `CaseResponse` means the queue has no record — a case older than
-    the state retention window, not an error.
-    """
     state: Literal["queued", "running", "retrying", "succeeded", "failed", "cached"]
     case_id: Optional[str] = Field(None, alias="caseId")
     media_type: Optional[str] = Field(None, alias="mediaType")
-    #: 1-based place in line; None once the job is no longer waiting.
     position: Optional[int] = None
     attempt: int = 0
     max_attempts: int = Field(0, alias="maxAttempts")
@@ -85,7 +61,6 @@ class JobState(BaseModel):
 
 
 class CaseResponse(BaseModel):
-    """Shape the frontend expects (camelCase via alias)."""
     id: str
     case_id: str = Field(alias="caseId")
     title: str
@@ -113,8 +88,6 @@ class CaseListResponse(BaseModel):
     page_size: int
 
 
-# ── Stats ─────────────────────────────────────────────────────────────────────
-
 class DashboardStats(BaseModel):
     total_cases: int = Field(alias="totalCases")
     authentic: int
@@ -122,20 +95,15 @@ class DashboardStats(BaseModel):
     processing: int
     inconclusive: int = 0
     failed: int = 0
-    #: {"image": n, "video": n, "audio": n}
     by_media_type: dict[str, int] = Field(default_factory=dict, alias="byMediaType")
     avg_risk_score: float = Field(alias="avgRiskScore")
 
     model_config = {"populate_by_name": True}
 
 
-# ── Health ────────────────────────────────────────────────────────────────────
-
 class HealthResponse(BaseModel):
-    #: "ok" | "idle" (no workers) | "degraded" (db or redis unreachable)
     status: str
     version: str
     db: str
     redis: str = "unknown"
-    #: Celery workers currently answering a control ping.
     workers: int = 0

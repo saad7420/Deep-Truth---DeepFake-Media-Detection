@@ -1,15 +1,5 @@
 "use client";
 
-/* ============================================================================
-   DEEP TRUTH — ANALYTICS
-   ----------------------------------------------------------------------------
-   Every figure here is derived client-side from the case list the backend
-   already returns. There is no analytics endpoint on the server, and inventing
-   trend data the API can't produce would make this screen lie — so the page
-   computes only what the data actually supports and says when a series is
-   too thin to read.
-   ========================================================================= */
-
 import { useMemo } from "react";
 import Link from "next/link";
 import { BarChart3, Gauge, PieChart as PieIcon, TrendingUp } from "lucide-react";
@@ -40,8 +30,6 @@ import { Button } from "@/app/components/ui/button";
 import { useCases, useStats } from "@/app/hooks/use-cases";
 import { VERDICT, type Case, type CaseStatus } from "@/app/shared/schema";
 
-// GET /cases caps page_size at 100; asking for more returns 422 and left
-// every chart on this page empty.
 const CHART_MAX = 100;
 
 export default function AnalyticsPage() {
@@ -49,8 +37,6 @@ export default function AnalyticsPage() {
   const { data, isLoading, isError, error, refetch } = useCases({ pageSize: CHART_MAX });
 
   const cases = useMemo(() => data?.cases ?? [], [data]);
-
-  /* ── Derived series ────────────────────────────────────────────────────── */
 
   const settled = useMemo(
     () => cases.filter((c) => c.status !== "processing" && c.status !== "failed"),
@@ -154,7 +140,6 @@ export default function AnalyticsPage() {
       ) : (
         <>
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-            {/* Risk distribution */}
             <Panel className="overflow-hidden lg:col-span-2">
               <PanelHeading
                 title="Risk score distribution"
@@ -201,7 +186,6 @@ export default function AnalyticsPage() {
               </div>
             </Panel>
 
-            {/* Modality split */}
             <Panel className="overflow-hidden">
               <PanelHeading title="Modality mix" hint="What's being submitted" />
               <div className="p-5">
@@ -241,7 +225,6 @@ export default function AnalyticsPage() {
             </Panel>
           </div>
 
-          {/* Volume over time */}
           <Panel className="overflow-hidden">
             <PanelHeading
               title="Case volume"
@@ -296,8 +279,6 @@ export default function AnalyticsPage() {
     </AppShell>
   );
 }
-
-/* ── Helpers ─────────────────────────────────────────────────────────────── */
 
 const tooltipStyle = {
   backgroundColor: "#121a2a",

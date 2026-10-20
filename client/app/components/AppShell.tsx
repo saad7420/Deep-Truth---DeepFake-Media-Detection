@@ -1,21 +1,11 @@
 "use client";
 
-/* ============================================================================
-   DEEP TRUTH — CONSOLE SHELL
-   ----------------------------------------------------------------------------
-   The single layout wrapper for every signed-in page. Previously each page
-   rendered its own <Sidebar /> *and* was wrapped in AppShell, which mounted the
-   rail twice and shifted the content 64px off. Pages now render content only.
-   ========================================================================= */
-
 import { cn } from "@/app/lib/utils";
 import { MobileNav, Sidebar } from "@/app/components/Navigation";
 
 export default function AppShell({
   children,
-  /** Turn off the grid substrate on pages that carry their own artwork. */
   grid = true,
-  /** Wider container for dense tables and dashboards. */
   width = "default",
 }: {
   children: React.ReactNode;

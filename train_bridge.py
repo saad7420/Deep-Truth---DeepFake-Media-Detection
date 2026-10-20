@@ -1,9 +1,3 @@
-"""Bridge to the training script.
-
-Inference reuses the training-time functions for frame decoding, MTCNN crop,
-center-resize, model build, and checkpoint load to guarantee identical
-preprocessing. Adjust DEEPTRUTH_TRAIN_PIPELINE if the script lives elsewhere.
-"""
 from __future__ import annotations
 import importlib.util
 import sys
@@ -13,6 +7,7 @@ from .config import TRAIN_PIPELINE
 _module = None
 
 
+# reuse the training code so inference preprocesses exactly like training
 def load():
     global _module
     if _module is not None:

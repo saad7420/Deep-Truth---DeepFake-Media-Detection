@@ -1,7 +1,3 @@
-// Obfuscation-grade encryption for sensitive values in chrome.storage.local
-// using the Web Crypto API (AES-GCM). NOTE: the key is stored in the extension,
-// so this protects against casual disk snooping, not a determined local
-// attacker with full disk access.
 const KEY_NAME = '__sec_key_v1__';
 
 async function getKey(): Promise<CryptoKey> {

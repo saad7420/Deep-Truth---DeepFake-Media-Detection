@@ -1,25 +1,3 @@
-"""
-M7b — Image Forensics Engine, backed by `deeptruth_pipeline`.
-
-Before the merge this slot did not exist: the server's vendored copy of the
-pipeline had only a stubbed ImageInferencer, so analyser.py returned a hard
-"inconclusive / not implemented" row for every image case. The pipeline now
-ships a real image path, and this engine is the adapter for it.
-
-What runs underneath (deeptruth_pipeline/inferencers/image.py):
-
-  * Eight ViT-B/16 + LoRA checkpoints under images_checkpoints/, discovered
-    as image_<slug>_lora_best. Five are "generalist" (AI-generated image
-    detection across content types), three are face-specialists.
-  * image_ffpp_facecrop is fed the MTCNN crop; the other seven see the whole
-    224x224 image. If no face is found, the crop branch is skipped and the
-    face group is down-weighted by ensemble policy rather than dropped.
-  * Scores are softmax probabilities, fused by ensemble.image_ensemble_decide.
-
-Same contract as the visual engine: `inp.artifact_path` is the original
-uploaded file, and preprocessing happens inside the pipeline (with its own
-on-disk cache), not in M4.
-"""
 from __future__ import annotations
 
 import logging
@@ -52,7 +30,7 @@ class ImageForensicsEngine(Engine):
             return neutral_result("image", reason)
 
         trust = ir["trust_score"]
-        if trust != trust:  # NaN — no checkpoint produced a usable score
+        if trust != trust:
             return neutral_result("image", ir.get("rationale",
                                                   "image ensemble returned NaN"))
 
@@ -73,13 +51,7 @@ class ImageForensicsEngine(Engine):
                 "n_generalist":    ir.get("n_generalist"),
                 "n_face":          ir.get("n_face"),
                 "skipped":         ir.get("skipped"),
-                # Carried through so the exported report can state the
-                # decision threshold; a verdict without it is unreproducible.
                 "threshold":       ir.get("threshold"),
-                # M7 FE-3. `artifact_map` carries the overlay URL plus the
-                # region summary and, importantly, whether the evidence was
-                # localised at all — see the report UI, which says so rather
-                # than implying a region that does not exist.
                 "artifact_map":    publish_artifact_map(ir.get("artifact_map")),
             },
             model_version="vit-b16-lora-ensemble",

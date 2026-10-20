@@ -1,23 +1,5 @@
 "use client";
 
-/* ============================================================================
-   DEEP TRUTH — ARTIFACT MAP (M7 FE-3)
-   ----------------------------------------------------------------------------
-   Shows where the image ensemble found its evidence, as a heat overlay on the
-   224x224 tensor the models actually saw.
-
-   The hard part here is not the picture, it is not overclaiming with it.
-   Grad-CAM always returns a map; whether that map is a statement about a
-   *region* depends on how concentrated it is. For a spliced face the relevance
-   piles into a few cells and "here is the manipulated area" is fair. For a
-   fully synthesised image the giveaway is texture everywhere, the map comes
-   back near-uniform, and the same sentence would be a fabrication.
-
-   So `localised` drives the wording, and the caveat is always visible rather
-   than tucked behind a tooltip. A forensic tool that lets a diffuse map read
-   as a located finding is worse than one that shows no map at all.
-   ========================================================================= */
-
 import { useState } from "react";
 import { Layers, ScanSearch } from "lucide-react";
 
@@ -58,8 +40,6 @@ export function ArtifactMapPanel({
             : "Regions that drove the verdict"
         }
         action={
-          // A clip's map is a contact sheet of many frames, so there is no
-          // single "original" to toggle back to.
           originalUrl && !isVideo ? (
             <button
               type="button"
@@ -86,7 +66,6 @@ export function ArtifactMapPanel({
           />
         </div>
 
-        {/* ── When, for a clip ────────────────────────────────────────── */}
         {isVideo && (
           <div className="mt-3">
             <div className="mb-1.5 flex items-baseline justify-between">
@@ -98,9 +77,6 @@ export function ArtifactMapPanel({
               </span>
             </div>
 
-            {/* Bars share one scale, so a flat clip looks flat. Normalising
-                each bar to its own height would make every clip look like it
-                had a decisive moment. */}
             <div className="flex h-12 items-end gap-0.5">
               {profile.map((share, i) => (
                 <div
@@ -146,7 +122,6 @@ export function ArtifactMapPanel({
           </div>
         )}
 
-        {/* ── What this map does and does not say ─────────────────────── */}
         <div
           className={cn(
             "mt-3 rounded-lg border px-3 py-2.5 text-[11px] leading-relaxed",

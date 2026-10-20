@@ -1,15 +1,3 @@
-"""Preprocessed-artifact cache.
-
-Layout:
-    <CACHE_DIR>/<media_key>/
-        meta.json
-        video/   face_frames.npy, full_frames.npy, stats.json
-        audio/   audio_16k.wav, stats.json
-        image/   image_224.npy, stats.json
-
-media_key is sha256 of the raw file bytes (truncated to 32 hex chars), prefixed
-with 'mk_'. Two uploads of the same file collide deliberately.
-"""
 from __future__ import annotations
 import hashlib
 import json
@@ -23,6 +11,7 @@ from .config import CACHE_DIR
 _CHUNK = 1 << 20
 
 
+# first 32 hex chars of the sha256, prefixed with mk_
 def media_key_from_file(path: Path) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:

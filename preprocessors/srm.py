@@ -1,15 +1,3 @@
-"""
-M8 preprocessor — SRM Noise Analysis Stream.
-
-Per the module's original design note: SRM needs no new decode pass. It
-reuses exactly the frames VideoPreprocessor / ImagePreprocessor already
-extracted and cached, and simply reduces them to feature vectors on top.
-
-This preprocessor therefore *delegates* rather than reimplements: for a
-video it hands off to VideoPreprocessor (whose cache means the second call
-costs a stats.json read, not a re-decode), for an image to ImagePreprocessor,
-and then runs the SRM filter bank over whichever frames come back.
-"""
 from __future__ import annotations
 
 import json
@@ -27,11 +15,6 @@ from ..storage import CacheRecord
 
 log = logging.getLogger(__name__)
 
-# How many frames to featurise per video. SRM features are cheap (pure numpy
-# convolution, no GPU), but there is no forensic benefit to running all 16
-# decoded frames through it — noise/splice-boundary statistics are stable
-# across a clip, and this keeps a video case's SRM pass to a fraction of a
-# second rather than 16x that.
 MAX_VIDEO_FRAMES = 4
 
 
@@ -60,7 +43,7 @@ class SRMPreprocessor(Preprocessor):
 
         vecs = np.stack([
             patch_feature_vector(to_grayscale(f), bank) for f in frames
-        ])  # (n_frames, feature_dim)
+        ])
 
         out_dir.mkdir(parents=True, exist_ok=True)
         np.save(feat_path, vecs)
@@ -76,11 +59,9 @@ class SRMPreprocessor(Preprocessor):
 
     def _video_frames(self, source_path: Path, media_key: str,
                       record: CacheRecord, force: bool) -> np.ndarray:
-        # Delegates to VideoPreprocessor's own cache: if M7 already ran for
-        # this media_key, this is a stats.json read, not a re-decode.
         inner = VideoPreprocessor(store=self.store)
         pre = inner.run(source_path, media_key, record, force=force)
-        full = np.load(pre["full_frames_path"])  # (16, 224, 224, 3) uint8
+        full = np.load(pre["full_frames_path"])
 
         n = min(MAX_VIDEO_FRAMES, full.shape[0])
         idx = np.linspace(0, full.shape[0] - 1, n).round().astype(int)
@@ -90,5 +71,5 @@ class SRMPreprocessor(Preprocessor):
                      record: CacheRecord, force: bool) -> np.ndarray:
         inner = ImagePreprocessor(store=self.store)
         pre = inner.run(source_path, media_key, record, force=force)
-        whole = np.load(pre["image_path"])  # (224, 224, 3) uint8
-        return whole[None, ...]  # (1, 224, 224, 3) — one "frame"
+        whole = np.load(pre["image_path"])
+        return whole[None, ...]

@@ -1,4 +1,4 @@
-import app.utils.env  # noqa
+import app.utils.env
 
 import uvicorn
 

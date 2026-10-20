@@ -1,11 +1,3 @@
-/* Builds the three extension entry points into the parent directory, which is
-   the folder Chrome loads. CSS imported from popup/index.tsx is emitted
-   alongside as popup.css, which popup.html links.
-
-   The PostCSS/Tailwind pass that used to run here is gone: Popup.css is now
-   plain CSS with no directives to expand, so the build no longer needs
-   tailwindcss, postcss or autoprefixer at all. */
-
 const esbuild = require('esbuild');
 const fs = require('fs');
 const path = require('path');

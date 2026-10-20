@@ -1,22 +1,3 @@
-"""Image preprocessor. Produces up to two branches:
-
-    image_224.npy        (224, 224, 3) uint8  — whole image, fed to every
-                                                 checkpoint except #8.
-    image_face_224.npy   (224, 224, 3) uint8  — MTCNN crop with 30% margin,
-                                                 only written when MTCNN
-                                                 detects a face; fed to
-                                                 image_ffpp_facecrop only.
-
-The whole-image branch always exists. The face branch is optional: if MTCNN
-isn't available, fails, or finds no face, we skip the face crop, set
-stats["face_detected"] = False, and the inferencer will simply not score
-image_ffpp_facecrop on this input.
-
-Cropping policy matches training (ffpp_facecrop_pipeline.py):
-  * Use the LARGEST detected face by box area when multiple are returned.
-  * Pad the box by IMAGE_FACE_MARGIN (default 0.30) on each side.
-  * Clip to image bounds, then resize to IMAGE_INPUT_SIZE × IMAGE_INPUT_SIZE.
-"""
 from __future__ import annotations
 import json
 import logging
@@ -34,25 +15,20 @@ log = logging.getLogger(__name__)
 _MTCNN_SINGLETON = None
 
 
+# built once per process, None when facenet-pytorch is missing
 def _get_mtcnn(device: str | None = None):
-    """Lazily build a single MTCNN instance per process. Returns None if
-    facenet-pytorch isn't installed or the load fails — callers should
-    handle that as "skip the face branch", not as a fatal error."""
     global _MTCNN_SINGLETON
     if _MTCNN_SINGLETON is not None:
         return _MTCNN_SINGLETON
     try:
         import torch
-        from facenet_pytorch import MTCNN  # type: ignore
+        from facenet_pytorch import MTCNN
     except ImportError:
         log.info("facenet-pytorch not installed; face-crop branch disabled")
         return None
     try:
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
-        # keep_all=True so we can pick the largest face when multiple appear;
-        # post_process=False because we want raw pixel coords back, not the
-        # MTCNN-internal normalised tensor.
         _MTCNN_SINGLETON = MTCNN(keep_all=True, post_process=False, device=device)
         log.info(f"MTCNN ready on {device}")
         return _MTCNN_SINGLETON
@@ -61,10 +37,8 @@ def _get_mtcnn(device: str | None = None):
         return None
 
 
+# use the biggest face when several are found
 def _pick_largest_box(boxes) -> list[float] | None:
-    """boxes is whatever MTCNN.detect returned for one image: an (N, 4) array
-    of [x1, y1, x2, y2] or None when no face was found. Return the box with
-    the largest area, or None."""
     if boxes is None or len(boxes) == 0:
         return None
     best, best_area = None, -1.0
@@ -78,9 +52,8 @@ def _pick_largest_box(boxes) -> list[float] | None:
     return list(best) if best is not None else None
 
 
+# same margin around the face as in training
 def _crop_with_margin(pil_image, box: list[float], margin: float):
-    """Pad the detected box by `margin` of its size on every side, clip to
-    image bounds, return a PIL crop. Mirrors training-time behaviour."""
     x1, y1, x2, y2 = box
     w, h = x2 - x1, y2 - y1
     px, py = w * margin, h * margin
@@ -114,7 +87,6 @@ class ImagePreprocessor(Preprocessor):
         face_path  = out_dir / "image_face_224.npy"
         stats_path = out_dir / "stats.json"
 
-        # Cache short-circuit.
         if not force and stats_path.exists() and whole_path.exists():
             stats = json.loads(stats_path.read_text())
             return {
@@ -134,11 +106,9 @@ class ImagePreprocessor(Preprocessor):
             im = im.convert("RGB")
             orig_w, orig_h = im.size
 
-            # Whole-image branch (always written).
             whole = im.resize((IMAGE_INPUT_SIZE, IMAGE_INPUT_SIZE), Image.BICUBIC)
             np.save(whole_path, np.asarray(whole, dtype=np.uint8))
 
-            # Face-crop branch (optional).
             face_detected = False
             face_box: list[float] | None = None
             if self.detect_faces:
@@ -162,7 +132,6 @@ class ImagePreprocessor(Preprocessor):
                             f"MTCNN detect failed on {source_path.name}: {e}")
 
             if not face_detected and face_path.exists():
-                # Stale crop from an earlier run — wipe.
                 face_path.unlink()
 
         stats = {

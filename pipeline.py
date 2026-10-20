@@ -1,14 +1,3 @@
-"""Top-level orchestrator.
-
-Pipeline.analyze(path)         direct synchronous call
-make_queue(pipeline)           wraps the pipeline behind a Task abstraction
-
-For each call:
-  1. ffprobe inspection -> MediaInfo (kind, duration, ...)
-  2. compute media_key from file bytes
-  3. for each modality wanted: preprocessor.run() then inferencer.predict()
-  4. assemble AnalyzeResult
-"""
 from __future__ import annotations
 import logging
 from dataclasses import dataclass, asdict, field
@@ -37,6 +26,7 @@ class Pipeline:
         self.store = store or CacheStore()
         self.registry = registry or Registry(store=self.store)
 
+    # probe, preprocess, then infer for each modality; failures become warnings
     def analyze(self, path: str | Path, *,
                 media_kind_hint: str | None = None,
                 modalities: list[str] | None = None,
@@ -52,6 +42,7 @@ class Pipeline:
                  f"duration={info.duration_seconds}  "
                  f"has_audio={info.has_audio}")
 
+        # same bytes always map to the same cache folder
         media_key = media_key_from_file(path)
         rec = self.store.load(media_key) or CacheRecord(
             media_key=media_key,
@@ -94,19 +85,8 @@ class Pipeline:
 
         return result
 
+    # a video with sound gets both a video and an audio pass
     def _default_modalities(self, info: MediaInfo) -> list[str]:
-        """Which modalities to run when the caller does not say.
-
-        A video carrying an audio track gets both branches. A face swap and a
-        cloned voice are independent manipulations — a clip can be visually
-        untouched but carry synthesised speech, and analysing only the frames
-        would report it clean.
-
-        Note this only applies when `modalities` is left unspecified.
-        VisualForensicsEngine passes `modalities=["video"]` explicitly, so the
-        server's per-case routing is unaffected; this governs cli.py and any
-        direct Pipeline use.
-        """
         if info.kind == "video":
             return ["video", "audio"] if info.has_audio else ["video"]
         if info.kind == "audio":
@@ -135,7 +115,6 @@ def _ir_to_dict(ir: InferenceResult) -> dict:
 
 
 def make_queue(pipeline: Pipeline, async_workers: int = 0) -> InMemoryQueue:
-    """Wrap a Pipeline behind the Task interface. async_workers=0 runs inline."""
     def runner(task: Task):
         task.stage = "analyzing"
         opts = task.options or {}

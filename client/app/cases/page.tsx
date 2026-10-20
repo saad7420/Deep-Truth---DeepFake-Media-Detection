@@ -42,8 +42,6 @@ function CaseHistory() {
   const router = useRouter();
   const params = useSearchParams();
 
-  /* Filters live in the URL so a filtered view can be linked and shared —
-     the Command Center's stat tiles deep-link straight into them. */
   const statusParam = params.get("status");
   const mediaParam = params.get("media");
   const status = CaseStatusSchema.safeParse(statusParam).success ? (statusParam as CaseStatus) : undefined;
@@ -56,7 +54,6 @@ function CaseHistory() {
 
   const deleteCase = useDeleteCase();
 
-  // Debounce typing so a search doesn't fire a request per keystroke.
   useEffect(() => {
     const t = setTimeout(() => {
       setQuery(searchInput);
@@ -111,7 +108,6 @@ function CaseHistory() {
         }
       />
 
-      {/* ── Controls ──────────────────────────────────────────────────────── */}
       <Panel className="p-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
           <div className="relative flex-1">
@@ -161,7 +157,6 @@ function CaseHistory() {
         </div>
       </Panel>
 
-      {/* ── Results ───────────────────────────────────────────────────────── */}
       <Panel className="overflow-hidden">
         <PanelHeading
           title={total === 1 ? "1 case" : `${total} cases`}
@@ -265,8 +260,6 @@ function CaseHistory() {
   );
 }
 
-/* ── Filter pills ────────────────────────────────────────────────────────── */
-
 function FilterGroup<T extends string>({
   label,
   options,
@@ -300,7 +293,6 @@ function FilterGroup<T extends string>({
   );
 }
 
-/* useSearchParams needs a Suspense boundary during static prerender. */
 export default function CasesPage() {
   return (
     <Suspense

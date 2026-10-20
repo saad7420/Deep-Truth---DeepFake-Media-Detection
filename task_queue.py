@@ -1,12 +1,3 @@
-"""Task abstraction with an in-memory queue.
-
-For the 30% demo we run inline. Swap InMemoryQueue for a Celery / Redis-backed
-queue later. The contract is: submit(task) -> task_id; get(task_id) -> Task.
-
-If async_workers > 0, tasks run in worker threads (good enough for I/O-bound
-queueing during the demo). For real concurrency across many GPU jobs you'll
-want process-level workers (Celery, RQ).
-"""
 from __future__ import annotations
 import logging
 import threading
